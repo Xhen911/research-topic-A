@@ -12,6 +12,18 @@ from .dielectric import (
     dielectric_function,
     energy_loss_function,
 )
+from .dos import (
+    compute_dos,
+    compute_dos_vectorized,
+    compute_eigenvalues,
+    integrate_bz,
+    dirac_dos_analytical,
+    generate_dirac_mesh,
+    compute_jdos,
+    compute_optical_jdos,
+    dirac_jdos_analytical,
+    dirac_optical_jdos_analytical,
+)
 
 __all__ = [
     'fermi_dirac',
@@ -24,4 +36,14 @@ __all__ = [
     'rpa_response',
     'dielectric_function',
     'energy_loss_function',
+    'compute_dos',
+    'compute_dos_vectorized',
+    'compute_eigenvalues',
+    'integrate_bz',
+    'dirac_dos_analytical',
+    'generate_dirac_mesh',
+    'compute_jdos',
+    'compute_optical_jdos',
+    'dirac_jdos_analytical',
+    'dirac_optical_jdos_analytical',
 ]
