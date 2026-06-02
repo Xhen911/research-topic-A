@@ -204,8 +204,217 @@ def compute_dos_vectorized(
 
 
 # ============================================================
-#  通用 BZ 积分
+#  Joint DOS — 带间跃迁 JDOS(ω) 和 光学 JDOS(ω)
 # ============================================================
+
+def compute_jdos(
+    model,
+    nk: int = 200,
+    w_range: Optional[Tuple[float, float]] = None,
+    nw: int = 500,
+    sigma: float = 0.01,
+    k_cart: Optional[np.ndarray] = None,
+    E_k: Optional[np.ndarray] = None,
+    interband_only: bool = True,
+    k_area: Optional[float] = None,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """计算 Joint Density of States。
+
+    JDOS(ω) = g/(2π)² ∫_BZ d²k Σ_{m>n} δ(ω − (E_m − E_n))
+
+    注意：只累加 m>n 以避免 (m,n) ↔ (n,m) 双重计数。
+
+    展宽：高斯 δ_σ(x) = exp(−x²/2σ²) / (σ√(2π))。
+
+    Parameters
+    ----------
+    model : HamiltonianModel
+    nk : int
+    w_range : (w_min, w_max) or None
+    nw : int
+    sigma : float
+    k_cart, E_k : optional
+    interband_only : bool
+        True: 只 m>n（带间 JDOS）。False: 所有 m≥n。
+    k_area : float or None
+        k 空间采样总面积。默认 |det(reciprocal_vectors)|。
+
+    Returns
+    -------
+    w_values : np.ndarray, shape (nw,)
+    jdos_values : np.ndarray, shape (nw,)
+    """
+    if k_cart is None:
+        _, k_cart = generate_k_mesh(nk, model.reciprocal_vectors)
+    Nk = len(k_cart)
+
+    if E_k is None:
+        E_k, _ = compute_eigenvalues(model, k_cart)
+
+    g = model.degeneracy_factor()
+    if k_area is None:
+        k_area = abs(np.linalg.det(model.reciprocal_vectors))
+    prefactor = g * k_area / ((2 * np.pi) ** 2 * Nk)
+
+    nb = model.n_bands
+    band_width = np.max(E_k) - np.min(E_k)
+
+    if w_range is None:
+        w_min = 0.0
+        w_max = band_width
+    else:
+        w_min, w_max = w_range
+
+    w_values = np.linspace(w_min, w_max, nw)
+
+    # 累加：m>n 保证 dE ≥ 0，避免对称双重计数
+    jdos = np.zeros(nw)
+    for m in range(nb):
+        for n in range(m if interband_only else m + 1):
+            for i in range(Nk):
+                dE = E_k[i, m] - E_k[i, n]
+                jdos += _gaussian(w_values - dE, sigma)
+    jdos *= prefactor
+
+    return w_values, jdos
+
+
+def compute_optical_jdos(
+    model,
+    nk: int = 200,
+    w_range: Optional[Tuple[float, float]] = None,
+    nw: int = 500,
+    sigma: float = 0.01,
+    k_cart: Optional[np.ndarray] = None,
+    E_k: Optional[np.ndarray] = None,
+    V_k: Optional[np.ndarray] = None,
+    direction: Optional[str] = None,
+    k_area: Optional[float] = None,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """计算光学 Joint DOS —— 用速度矩阵元 |v_{mn}|² 加权的 JDOS。
+
+    O-JDOS(ω) = g/(2π)² ∫ d²k Σ_{m≠n} |v_{mn}(k)|² δ(ω − (E_m−E_n))
+
+    其中 v^α_{mn} = ⟨m,k| v_α |n,k⟩，即速度算符在本征基下的矩阵元。
+
+    Parameters
+    ----------
+    model : HamiltonianModel
+    nk : int
+    w_range : (w_min, w_max) or None
+    nw : int
+    sigma : float
+    k_cart, E_k, V_k : optional
+    direction : str or None
+        'x': 只使用 |v^x_{mn}|² 权重。
+        'y': 只使用 |v^y_{mn}|² 权重。
+        None: 用 (|v^x|² + |v^y|²)/2（平均）。
+    k_area : float or None
+
+    Returns
+    -------
+    w_values : np.ndarray, shape (nw,)
+    ojdos_values : np.ndarray, shape (nw,)
+    """
+    if k_cart is None:
+        _, k_cart = generate_k_mesh(nk, model.reciprocal_vectors)
+    Nk = len(k_cart)
+
+    if E_k is None or V_k is None:
+        E_k, V_k = compute_eigenvalues(model, k_cart)
+
+    g = model.degeneracy_factor()
+    if k_area is None:
+        k_area = abs(np.linalg.det(model.reciprocal_vectors))
+    prefactor = g * k_area / ((2 * np.pi) ** 2 * Nk)
+
+    nb = model.n_bands
+    band_width = np.max(E_k) - np.min(E_k)
+
+    if w_range is None:
+        w_min = 0.0
+        w_max = band_width
+    else:
+        w_min, w_max = w_range
+
+    w_values = np.linspace(w_min, w_max, nw)
+
+    # 速度矩阵元 |v_{mn}|²
+    ojdos = np.zeros(nw)
+    for i in range(Nk):
+        vx, vy = model.velocity_operator(k_cart[i])
+        Vi = V_k[i]  # (n_orb, n_bands)
+
+        # 本征基: v^α_{mn} = V† v_α V
+        vx_eig = Vi.conj().T @ vx @ Vi   # (nb, nb)
+        vy_eig = Vi.conj().T @ vy @ Vi
+
+        for m in range(nb):
+            for n in range(m):           # m>n only — 避免对称双重计数
+                dE = E_k[i, m] - E_k[i, n]  # 保证 dE ≥ 0
+
+                if direction == 'x':
+                    weight = np.abs(vx_eig[m, n]) ** 2
+                elif direction == 'y':
+                    weight = np.abs(vy_eig[m, n]) ** 2
+                else:
+                    weight = (np.abs(vx_eig[m, n]) ** 2 +
+                              np.abs(vy_eig[m, n]) ** 2) / 2.0
+
+                ojdos += weight * _gaussian(w_values - dE, sigma)
+    ojdos *= prefactor
+
+    return w_values, ojdos
+
+
+# ============================================================
+#  解析 Dirac JDOS / O-JDOS（用于验证）
+# ============================================================
+
+def dirac_jdos_analytical(
+    w_values: np.ndarray,
+    vF: float,
+    g: int = 4,
+) -> np.ndarray:
+    """2D Dirac 锥的解析带间 JDOS。
+
+    JDOS(ω) = g·ω / (8π vF²)
+
+    推导：ΔE = 2vF|k|, d(ΔE) = 2vF d|k|
+    JDOS = g/(2π)² · 2π ∫ k dk · 2 · δ(ω − 2vF k)   [m↔n 对称计数 2]
+         = g/(2π) · ∫ k dk δ(ω − 2vF k)
+         = g/(2π) · (ω/(2vF)) · (1/(2vF))
+         = g·ω / (8π vF²)
+
+    Parameters
+    ----------
+    w_values : np.ndarray
+    vF : float
+    g : int
+        简并因子 (自旋 × 谷)。Default 4。
+
+    Returns
+    -------
+    jdos : np.ndarray
+    """
+    return g * w_values / (8 * np.pi * vF ** 2)
+
+
+def dirac_optical_jdos_analytical(
+    w_values: np.ndarray,
+    vF: float,
+    g: int = 4,
+) -> np.ndarray:
+    """2D Dirac 锥的解析光学 JDOS（各向同性平均）。
+
+    O-JDOS(ω) = g·vF²·ω / (16π vF²) = g·ω / (16π)
+
+    推导：|v_{+-}|² = vF²（各向同性，见光学矩阵元验证）
+    O-JDOS = (1/2) Σ_α |v^α|² · JDOS_不带权重
+            = vF² · JDOS（已考虑 1/2 平均）
+    注意：compute_optical_jdos 的 (|vx|²+|vy|²)/2 也做了平均。
+    """
+    return g * w_values / (16 * np.pi)
 
 def integrate_bz(
     model,
