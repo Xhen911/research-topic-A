@@ -34,3 +34,32 @@ class HamiltonianModel(ABC):
 
     def degeneracy_factor(self) -> int:
         return self.valley_degeneracy * self.spin_degeneracy
+
+    # ── 速度算符 ─────────────────────────────────────────
+    def velocity_operator(self, k: np.ndarray, dk: float = 1e-4) -> tuple:
+        """
+        速度算符 v_α = ∂H/∂k_α，在轨道基下。
+        默认实现：中心有限差分。
+        子类应 override 为解析求导以提高精度和效率。
+
+        Parameters
+        ----------
+        k : np.ndarray, shape (2,)
+            波矢（模型约定单位）。
+        dk : float
+            有限差分步长。默认 1e-4。
+
+        Returns
+        -------
+        v_x, v_y : tuple of np.ndarray
+            各 shape (n_orbitals, n_orbitals)，dtype=complex。
+        """
+        H_plus_x = self.hamiltonian(k + np.array([dk, 0.0]))
+        H_minus_x = self.hamiltonian(k - np.array([dk, 0.0]))
+        H_plus_y = self.hamiltonian(k + np.array([0.0, dk]))
+        H_minus_y = self.hamiltonian(k - np.array([0.0, dk]))
+
+        v_x = (H_plus_x - H_minus_x) / (2.0 * dk)
+        v_y = (H_plus_y - H_minus_y) / (2.0 * dk)
+
+        return v_x, v_y

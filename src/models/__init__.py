@@ -6,7 +6,7 @@ from .graphene import (
     BilayerGrapheneKP,
     BilayerGrapheneKPAA,
 )
-# from .tbg_bm import BistritzMacDonaldTBG
+from .tbg_bm import BistritzMacDonaldTBG
 # from .tbg_tb import TBGTightBinding
 
 __all__ = [
@@ -16,6 +16,6 @@ __all__ = [
     'SingleLayerGrapheneKP',
     'BilayerGrapheneKP',
     'BilayerGrapheneKPAA',
-    # 'BistritzMacDonaldTBG',
+    'BistritzMacDonaldTBG',
     # 'TBGTightBinding',
 ]

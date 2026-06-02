@@ -251,6 +251,49 @@ class BistritzMacDonaldTBG(HamiltonianModel):
         return E, V
 
     # ────────────────────────────────────────────────────────
+    #  速度算符 — 解析 ∂H/∂k（轨道基）
+    # ────────────────────────────────────────────────────────
+    def velocity_operator(self, k: np.ndarray, dk: float = 1e-4) -> tuple:
+        """
+        解析速度算符（轨道基，2Nq × 2Nq）。
+
+        只有 Dirac 对角块依赖 k。层间隧穿矩阵与 k 无关。
+        对每层 l = ±1，旋转矩阵 R_l ≈ [[1, -s_l], [s_l, 1]]
+        (s_l = sin(l·ξ·θ/2)) 给出有效 k 空间导数：
+
+            ∂(R_l·k)_x/∂k_x = 1,   ∂(R_l·k)_x/∂k_y = -s_l
+            ∂(R_l·k)_y/∂k_x = s_l, ∂(R_l·k)_y/∂k_y = 1
+
+        Dirac 块 H_l = -vF * [[0, ξ·kj_x − i·kj_y], [ξ·kj_x + i·kj_y, 0]]
+
+        因此：
+
+            ∂H_l/∂k_x = -vF * [[0, ξ − i·s_l], [ξ + i·s_l, 0]]
+            ∂H_l/∂k_y = -vF * [[0, −ξ·s_l − i], [−ξ·s_l + i, 0]]
+
+        用 H + H† 构造完整厄米矩阵。
+        """
+        N = self.Nq
+        v_x = np.zeros((2 * N, 2 * N), dtype=complex)
+        v_y = np.zeros((2 * N, 2 * N), dtype=complex)
+
+        for i in range(N):
+            l = 1.0 if i >= self._n_pts1 else -1.0
+            theta_l = l * self.xi * self.theta_rad
+            s_l = np.sin(theta_l / 2.0)
+
+            # ∂H/∂k_x (2×2 block, upper triangle)
+            v_x[2 * i, 2 * i + 1] = -self.vF * (self.xi - 1j * s_l)
+
+            # ∂H/∂k_y (2×2 block, upper triangle)
+            v_y[2 * i, 2 * i + 1] = -self.vF * (-self.xi * s_l - 1j)
+
+        # 厄米对称化
+        v_x = v_x + v_x.conj().T
+        v_y = v_y + v_y.conj().T
+        return v_x, v_y
+
+    # ────────────────────────────────────────────────────────
     #  moiré BZ 高对称点
     # ────────────────────────────────────────────────────────
     def high_symmetry_points(self) -> dict:

@@ -42,6 +42,27 @@ def _f_k(k: np.ndarray) -> complex:
     """
     return np.sum(np.exp(1j * (k @ _DELTA.T)))
 
+
+def _df_dk(k: np.ndarray) -> tuple:
+    """
+    结构因子 f(k) 对 k 的解析梯度。
+
+    ∂f/∂k_α = i Σⱼ δⱼ^α exp(i k·δⱼ)
+
+    Parameters
+    ----------
+    k : np.ndarray, shape (2,)
+        无量纲 k 矢量。
+
+    Returns
+    -------
+    df_dkx, df_dky : tuple of complex
+    """
+    phases = np.exp(1j * (k @ _DELTA.T))  # shape (3,)
+    dfx = 1j * np.dot(_DELTA[:, 0], phases)
+    dfy = 1j * np.dot(_DELTA[:, 1], phases)
+    return dfx, dfy
+
 # ============================================================
 #  KP 模型用常量（物理单位）
 # ============================================================
@@ -164,6 +185,25 @@ class SingleLayerGrapheneTB(HamiltonianModel):
     def check_hermitian(self, k: np.ndarray, tol: float = 1e-10) -> bool:
         H = self.hamiltonian(k)
         return np.max(np.abs(H - H.conj().T)) < tol
+
+    def velocity_operator(self, k: np.ndarray, dk: float = 1e-4) -> tuple:
+        """
+        解析速度算符（轨道基）。
+
+        v_α = ∂H/∂k_α = t * [[0, -∂f/∂k_α], [-∂f*/∂k_α, 0]]
+
+        其中 ∂f/∂k_α = i Σ_j δ_j^α exp(i k·δ_j)。
+        """
+        dfx, dfy = _df_dk(k)
+        v_x = self.t * np.array([
+            [0.0, -dfx],
+            [-np.conj(dfx), 0.0]
+        ])
+        v_y = self.t * np.array([
+            [0.0, -dfy],
+            [-np.conj(dfy), 0.0]
+        ])
+        return v_x, v_y
 
 
 # ============================================================
@@ -336,9 +376,55 @@ class BilayerGrapheneTB(HamiltonianModel):
         H = self.hamiltonian(k)
         return np.max(np.abs(H - H.conj().T)) < tol
 
+    def velocity_operator(self, k: np.ndarray, dk: float = 1e-4) -> tuple:
+        """
+        解析速度算符（轨道基，4×4）。
 
-# ============================================================
-#  SingleLayerGrapheneKP — 单层石墨烯 k·p 模型（Dirac 哈密顿量）
+        所有 k 依赖项均来自结构因子 f(k) 及其复共轭。
+        将 hamiltonian() 中对 f 的依赖替换为 ∂f/∂k_α 即得 v_α。
+        """
+        dfx, dfy = _df_dk(k)
+        dfxc = np.conj(dfx)
+        dfyc = np.conj(dfy)
+
+        v_x = np.zeros((4, 4), dtype=complex)
+        v_y = np.zeros((4, 4), dtype=complex)
+
+        # 层内 hopping（A1-B1 和 A2-B2）
+        v_x[0, 1] = -self.t * dfx
+        v_x[1, 0] = -self.t * dfxc
+        v_x[2, 3] = -self.t * dfx
+        v_x[3, 2] = -self.t * dfxc
+
+        v_y[0, 1] = -self.t * dfy
+        v_y[1, 0] = -self.t * dfyc
+        v_y[2, 3] = -self.t * dfy
+        v_y[3, 2] = -self.t * dfyc
+
+        if self.gamma1 != 0.0:
+            # AB stacking: gamma4 交叉项 和 gamma3 斜向项
+            if self.gamma4 != 0.0:
+                v_x[0, 2] = -self.gamma4 / self.t * dfx
+                v_x[2, 0] = -self.gamma4 / self.t * dfxc
+                v_x[1, 3] = -self.gamma4 / self.t * dfx
+                v_x[3, 1] = -self.gamma4 / self.t * dfxc
+
+                v_y[0, 2] = -self.gamma4 / self.t * dfy
+                v_y[2, 0] = -self.gamma4 / self.t * dfyc
+                v_y[1, 3] = -self.gamma4 / self.t * dfy
+                v_y[3, 1] = -self.gamma4 / self.t * dfyc
+            if self.gamma3 != 0.0:
+                v_x[0, 3] = self.gamma3 / self.t * dfxc   # A1-B2: gamma3/t * f*
+                v_x[3, 0] = self.gamma3 / self.t * dfx
+                v_y[0, 3] = self.gamma3 / self.t * dfyc
+                v_y[3, 0] = self.gamma3 / self.t * dfy
+        else:
+            # AA stacking: gamma4 主层间耦合（k 无关常数项 → 零速度贡献）
+            pass
+
+        return v_x, v_y
+
+
 # ============================================================
 
 class SingleLayerGrapheneKP(HamiltonianModel):
@@ -431,6 +517,25 @@ class SingleLayerGrapheneKP(HamiltonianModel):
     def check_hermitian(self, k: np.ndarray, tol: float = 1e-10) -> bool:
         H = self.hamiltonian(k)
         return np.max(np.abs(H - H.conj().T)) < tol
+
+    def velocity_operator(self, k: np.ndarray, dk: float = 1e-4) -> tuple:
+        """
+        解析速度算符（轨道基，2×2，常数矩阵）。
+
+        ∂H/∂k_x = vF * [[0, ξ], [ξ, 0]]
+        ∂H/∂k_y = vF * [[0, -i], [i, 0]]
+
+        k 参数被忽略（KP 模型 H 线性于 k）。
+        """
+        v_x = self.vF * np.array([
+            [0.0, self.xi],
+            [self.xi, 0.0]
+        ])
+        v_y = self.vF * np.array([
+            [0.0, -1j],
+            [1j, 0.0]
+        ])
+        return v_x, v_y
 
 
 # ============================================================
@@ -591,6 +696,53 @@ class BilayerGrapheneKP(HamiltonianModel):
         H = self.hamiltonian(k)
         return np.max(np.abs(H - H.conj().T)) < tol
 
+    def velocity_operator(self, k: np.ndarray, dk: float = 1e-4) -> tuple:
+        """
+        解析速度算符（轨道基，4×4，常数矩阵）。
+
+        H 的全部 k 依赖来自 π = ξ·kx + i·ky 和 π† = ξ·kx − i·ky。
+        ∂π/∂kx = ξ,  ∂π/∂ky = i
+        ∂π†/∂kx = ξ, ∂π†/∂ky = −i
+
+        gamma1 和 onsite 项与 k 无关 → 零速度贡献。
+        """
+        xi = self.xi
+        v_x = np.zeros((4, 4), dtype=complex)
+        v_y = np.zeros((4, 4), dtype=complex)
+
+        # 层内: A1-B1, A2-B2
+        v_x[0, 1] = self.v0 * xi
+        v_x[1, 0] = self.v0 * xi
+        v_x[2, 3] = self.v0 * xi
+        v_x[3, 2] = self.v0 * xi
+
+        v_y[0, 1] = -1j * self.v0
+        v_y[1, 0] = 1j * self.v0
+        v_y[2, 3] = -1j * self.v0
+        v_y[3, 2] = 1j * self.v0
+
+        # gamma4 交叉项（k 线性项）
+        if self.gamma4 != 0.0:
+            v_x[0, 2] = self.v4 * xi
+            v_x[2, 0] = self.v4 * xi
+            v_x[1, 3] = self.v4 * xi
+            v_x[3, 1] = self.v4 * xi
+
+            v_y[0, 2] = -1j * self.v4
+            v_y[2, 0] = 1j * self.v4
+            v_y[1, 3] = -1j * self.v4
+            v_y[3, 1] = 1j * self.v4
+
+        # gamma3 斜向耦合（k 线性项）
+        if self.gamma3 != 0.0:
+            v_x[0, 3] = self.v3 * xi
+            v_x[3, 0] = self.v3 * xi
+
+            v_y[0, 3] = 1j * self.v3
+            v_y[3, 0] = -1j * self.v3
+
+        return v_x, v_y
+
 
 # ============================================================
 #  BilayerGrapheneKPAA — AA 堆叠双层石墨烯 k·p 模型
@@ -724,3 +876,26 @@ class BilayerGrapheneKPAA(HamiltonianModel):
     def check_hermitian(self, k: np.ndarray, tol: float = 1e-10) -> bool:
         H = self.hamiltonian(k)
         return np.max(np.abs(H - H.conj().T)) < tol
+
+    def velocity_operator(self, k: np.ndarray, dk: float = 1e-4) -> tuple:
+        """
+        解析速度算符（轨道基，4×4，常数矩阵）。
+
+        AA 堆叠：只有层内 v0 项依赖 k，层间 γ_aa 为常数
+        → 速度算符是两份单层 Dirac 的直和。
+        """
+        xi = self.xi
+        v_x = np.zeros((4, 4), dtype=complex)
+        v_y = np.zeros((4, 4), dtype=complex)
+
+        v_x[0, 1] = self.v0 * xi
+        v_x[1, 0] = self.v0 * xi
+        v_x[2, 3] = self.v0 * xi
+        v_x[3, 2] = self.v0 * xi
+
+        v_y[0, 1] = -1j * self.v0
+        v_y[1, 0] = 1j * self.v0
+        v_y[2, 3] = -1j * self.v0
+        v_y[3, 2] = 1j * self.v0
+
+        return v_x, v_y
