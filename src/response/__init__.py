@@ -25,6 +25,15 @@ from .dos import (
     dirac_optical_jdos_analytical,
 )
 
+from .conductivity import (
+    SIGMA_0,
+    velocity_matrix_elements,
+    optical_conductivity_interband,
+    optical_conductivity_intraband,
+    optical_conductivity,
+    optical_conductivity_xx,
+)
+
 __all__ = [
     'fermi_dirac',
     'generate_k_mesh',
@@ -46,4 +55,10 @@ __all__ = [
     'compute_optical_jdos',
     'dirac_jdos_analytical',
     'dirac_optical_jdos_analytical',
+    'SIGMA_0',
+    'velocity_matrix_elements',
+    'optical_conductivity_interband',
+    'optical_conductivity_intraband',
+    'optical_conductivity',
+    'optical_conductivity_xx',
 ]
