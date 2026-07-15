@@ -70,8 +70,8 @@ class CachedModel:
 
         self.E_k = np.zeros((self.Nk, model.n_bands))
         self.V_k = np.zeros((self.Nk, model.n_orbitals, self.nb_cache), dtype=complex)
-        bs = slice(model.n_bands//2 - self.nb_cache//2,
-                   model.n_bands//2 + self.nb_cache//2)
+        self.bs_cache = slice(model.n_bands//2 - self.nb_cache//2,
+                                  model.n_bands//2 + self.nb_cache//2)
 
         for i in range(self.Nk):
             Ei, Vi = model.solve(self.k_cart[i])
@@ -111,7 +111,7 @@ class CachedModel:
                 for ik in range(self.Nk):
                     Ei, Vi = model.solve(kq[ik])
                     self.E_q[iq, ik] = Ei
-                    self.V_q[iq, ik] = Vi[:, bs]
+                    self.V_q[iq, ik] = Vi[:, self.bs_cache]
 
     # ── IO ────────────────────────────────────────────────
     def save(self, path):
