@@ -544,3 +544,198 @@ def dirac_dos_analytical(
     dos : np.ndarray
     """
     return g * np.abs(E_values) / (2 * np.pi * vF ** 2)
+
+
+# ============================================================
+#  三角形 DOS (Lehmann–Taut) — 精确捕获 VHS 对数发散
+# ============================================================
+
+def _lehmann_I0(e1, e2, e3, z, area, thr=1e-10):
+    """Analytic 2D triangle integral ∫_T d²k / (ε(k) − z).
+    
+    Works with scalar e1,e2,e3 and array z (vectorised over energy grid).
+    Based on Lehmann-Taut formula for linear interpolation within each triangle.
+    """
+    def _L(e):
+        val = e - z
+        return val * np.log(val) - val
+    def _D(ea, eb):
+        if abs(ea - eb) < thr:
+            return np.log(eb - z)
+        return (_L(ea) - _L(eb)) / (ea - eb)
+    de31 = e3 - e1
+    if abs(de31) < thr:
+        if abs(e2 - e1) < thr:
+            return area / (e1 - z)
+        return _lehmann_I0(e2, e1, e3, z, area, thr)
+    return 2.0 * area * (_D(e2, e3) - _D(e2, e1)) / de31
+
+
+def _triangles_for_kmesh(nk):
+    """Triangle connectivity for a uniform nk×nk BZ parallelogram mesh.
+    
+    Returns (2·nk², 3) index array and area per triangle.
+    """
+    tri_list = []
+    for a in range(nk):
+        for b in range(nk):
+            v00 = a * nk + b
+            v01 = a * nk + (b + 1) % nk
+            v10 = (a + 1) % nk * nk + b
+            v11 = (a + 1) % nk * nk + (b + 1) % nk
+            tri_list.append([v00, v01, v11])
+            tri_list.append([v00, v10, v11])
+    return np.array(tri_list, dtype=int)
+
+
+def compute_dos_triangle(model, nk=24, E_range=None, nE=3000,
+                         eta=0.05e-3, band_slice=None):
+    """DOS via Lehmann-Taut analytic triangle integration.
+    
+    Within each triangle the band energy is linearly interpolated from
+    the three vertex values and integrated analytically.  This captures
+    the logarithmic divergence at Van Hove singularities exactly,
+    using only a Lorentzian broadening η (physical, not numerical).
+    
+    Parameters
+    ----------
+    model : HamiltonianModel
+    nk : int — k-points per reciprocal direction  (total = nk²)
+    E_range : (float, float) or None
+    nE : int
+    eta : float — Lorentzian broadening (eV).  Default 0.05 meV.
+    band_slice : slice or None — which bands to include (default: all)
+    
+    Returns
+    -------
+    E : (nE,)  energy grid (eV)
+    dos : (nE,)  DOS (states/eV/unit cell)
+    """
+    _, k_cart = generate_k_mesh(nk, model.reciprocal_vectors)
+    Nk = len(k_cart)
+    assert int(np.sqrt(Nk))**2 == Nk, f'nk² ≠ Nk={Nk}'
+    nk_side = int(np.sqrt(Nk))
+    
+    E_k, _ = compute_eigenvalues(model, k_cart)
+    if band_slice is None:
+        band_slice = slice(None)
+    E_k = E_k[:, band_slice]
+    nb_sel = E_k.shape[1]
+    
+    if E_range is None:
+        margin = 10 * eta
+        E_range = (float(E_k.min()) - margin, float(E_k.max()) + margin)
+    E = np.linspace(*E_range, nE)
+    
+    area_BZ = abs(np.linalg.det(model.reciprocal_vectors))
+    dk = np.sqrt(area_BZ / Nk)
+    area_tri = dk ** 2 / 2.0
+    g = model.degeneracy_factor()
+    prefactor = g / ((2 * np.pi) ** 2 * np.pi)
+    
+    tri_idx = _triangles_for_kmesh(nk_side)
+    dos = np.zeros(nE)
+    z_arr = E + 1j * eta
+    
+    for i1, i2, i3 in tri_idx:
+        for ib in range(nb_sel):
+            e1, e2, e3 = float(E_k[i1,ib]), float(E_k[i2,ib]), float(E_k[i3,ib])
+            I0 = _lehmann_I0(e1, e2, e3, z_arr, area_tri)
+            dos += prefactor * I0.imag
+    
+    return E, dos
+
+
+# ============================================================
+#  Van Hove 奇异点检测
+# ============================================================
+
+def find_vhs_peaks(E, dos, prominence=None, height=None, distance=None):
+    """Locate VHS energies via peak-finding on DOS(E).
+    
+    Uses scipy.signal.find_peaks with optional prominence/height
+    thresholds to reject noise.
+    
+    Returns list of VHS energies [eV].
+    """
+    from scipy.signal import find_peaks
+    if prominence is None:
+        prominence = 0.02 * (dos.max() - dos.min())
+    if height is None:
+        height = dos.min() + 0.05 * (dos.max() - dos.min())
+    if distance is None:
+        distance = max(1, len(E) // 50)
+    peaks, _ = find_peaks(dos, prominence=prominence,
+                           height=height, distance=distance)
+    return [float(E[p]) for p in peaks]
+
+
+def find_vhs_derivative(E, dos):
+    """Locate VHS via dDOS/dE zero-crossings (sign + → −).
+    
+    Returns list of dicts with keys 'E_vhs' and 'dos'.
+    """
+    d_dos = np.gradient(dos, E)
+    results = []
+    for i in range(1, len(d_dos)):
+        if d_dos[i - 1] > 0 and d_dos[i] <= 0:
+            frac = d_dos[i - 1] / (d_dos[i - 1] - d_dos[i])
+            E_cross = E[i - 1] + frac * (E[i] - E[i - 1])
+            results.append({
+                'E_vhs': float(E_cross),
+                'dos': float(np.interp(E_cross, E, dos)),
+            })
+    return results
+
+
+# ============================================================
+#  Filling factor & CNP  (flat-pair bisection)
+# ============================================================
+
+def compute_filling(E_k, Ef, band_slice=None, kBT=0.1e-3,
+                    degeneracy=None, model=None):
+    """Filling factor ν at Fermi energy Ef.
+    
+    ν(μ) = g × (⟨Σ_bands f(E_n(k), μ)⟩_k − ⟨Σ_bands f(E_n(k), E_CNP)⟩_k)
+    
+    Returns ν, where ν=0 at CNP and ν ∈ [−g, +g].
+    """
+    if degeneracy is None and model is not None:
+        degeneracy = model.degeneracy_factor()
+    if degeneracy is None:
+        degeneracy = 4
+    if band_slice is not None:
+        E_k = E_k[:, band_slice]
+    x = np.clip((E_k - Ef) / kBT, -80.0, 80.0)
+    f = 1.0 / (1.0 + np.exp(x))
+    occ_per_k = f.sum(axis=1)
+    return degeneracy * (np.mean(occ_per_k) - occ_per_k.size / E_k.shape[1])
+
+
+def compute_cnp(E_k, band_slice=None, kBT=0.1e-3,
+                degeneracy=None, model=None):
+    """CNP Fermi energy via bisection.
+    
+    Returns Ef such that compute_filling(E_k, Ef) ≈ 0.
+    """
+    if degeneracy is None and model is not None:
+        degeneracy = model.degeneracy_factor()
+    if degeneracy is None:
+        degeneracy = 4
+    if band_slice is not None:
+        E_k = E_k[:, band_slice]
+    
+    lo = float(E_k.min() - 50 * kBT)
+    hi = float(E_k.max() + 50 * kBT)
+    for _ in range(120):
+        mid = 0.5 * (lo + hi)
+        x = np.clip((E_k - mid) / kBT, -80.0, 80.0)
+        f = 1.0 / (1.0 + np.exp(x))
+        occ_mean = np.mean(f.sum(axis=1))
+        if occ_mean < 1.0:
+            lo = mid
+        else:
+            hi = mid
+        if hi - lo < 1e-9:
+            break
+    return 0.5 * (lo + hi)
