@@ -353,6 +353,7 @@ def lindhard_from_cache(
     cache,
     q_values,
     w_values,
+    q_eps=0.0,
     eta=0.01,
     beta=100.0,
     Ef=0.0,
@@ -409,6 +410,8 @@ def lindhard_from_cache(
             pass
 
     for iq in _range:
+        # Optionally shift q=0 values by eps to avoid singularity
+        _q_val = max(q_values[iq], q_eps) if q_eps > 0 else q_values[iq]
         E_q = cache.E_q[iq]              # (Nk, nb)
         V_q = cache.V_q[iq]              # (Nk, n_orbitals, nb_cache)
         E_k = cache.E_k                  # (Nk, nb)
@@ -443,6 +446,7 @@ def lindhard_from_cache(
     cache,
     q_values,
     w_values,
+    q_eps=0.0,
     eta=0.01,
     beta=100.0,
     Ef=0.0,
@@ -499,6 +503,8 @@ def lindhard_from_cache(
             pass
 
     for iq in _range:
+        # Optionally shift q=0 values by eps to avoid singularity
+        _q_val = max(q_values[iq], q_eps) if q_eps > 0 else q_values[iq]
         E_q = cache.E_q[iq]              # (Nk, nb)
         V_q = cache.V_q[iq]              # (Nk, n_orbitals, nb_cache)
         E_k = cache.E_k                  # (Nk, nb)
