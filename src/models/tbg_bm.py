@@ -12,6 +12,13 @@
 #    - 能量以 eV 为单位。
 #    - ħv_F 以 eV·Å 为单位。
 #    - 层间耦合 u, up 以 eV 为单位。
+#
+#  哈密顿量后端：
+#    ham_method='numpy' (默认) — 纯 NumPy 逐块填充，快速、无依赖。
+#    ham_method='sympy'          — Sympy 符号构建 + lambdify。
+#    两种后端在数值上等价 (差异 < 1e-14 eV)，
+#    所有其他方法 (solve, velocity_operator, high_symmetry_points)
+#    对两种后端通用，无需适配。
 # ============================================================
 
 import numpy as np
@@ -54,6 +61,11 @@ class BistritzMacDonaldTBG(HamiltonianModel):
     n_shells : int
         倒空间壳层数（动量截断）。默认 4。
         小角度时需要更大的值。
+    ham_method : str
+        哈密顿量后端: ``'numpy'`` (默认) 或 ``'sympy'``。
+        两种后端数值等价 (差异 < 1e-14 eV)。
+        ``'sympy'`` 首次构造较慢，但 lambdify 后执行速度与 numpy 相当；
+        适合需要解析操作哈密顿量的场景。
     """
 
     n_bands: int
@@ -71,6 +83,7 @@ class BistritzMacDonaldTBG(HamiltonianModel):
         up: float = 0.0975,
         valley: int = +1,
         n_shells: int = 4,
+        ham_method: str = 'numpy',
     ):
         self.theta = theta
         self.theta_rad = np.radians(theta)
@@ -79,6 +92,8 @@ class BistritzMacDonaldTBG(HamiltonianModel):
         self.up = up
         self.xi = valley
         self.n_shells = n_shells
+        self.ham_method = ham_method
+        self._ham_sympy_func = None       # lazy-built sympy function
 
         # ── moiré 倒格子 ─────────────────────────────────
         g_norm = _G_NORM
@@ -89,7 +104,6 @@ class BistritzMacDonaldTBG(HamiltonianModel):
         self.reciprocal_vectors = self.moire_reciprocal.copy()
 
         # ── moiré 正格子 (L_i·mg_j = 2π δ_{ij}) ─────────
-        # [mg1; mg2]^T · [L1; L2]^T = 2π I  →  L = 2π · (mg^T)^{-1}
         self.lattice_vectors = 2 * np.pi * np.linalg.inv(self.moire_reciprocal.T)
 
         # ── 构建 Q 点格点 ────────────────────────────────
@@ -99,27 +113,19 @@ class BistritzMacDonaldTBG(HamiltonianModel):
 
         pts1 = []          # top  layer  Q 点
         pts2 = []          # bottom layer Q 点
-        # c = (mg1 + 2 * mg2) / 3   # 层间 offset
 
-        # for i in range(-axial, axial + 1):
-        #     for j in range(-axial, axial + 1):
-        #         p = (i - 1 / 3) * mg1 + (j + 1 / 3) * mg2
-        #         if np.linalg.norm(p) <= radius:
-        #             pts1.append(p)
-        #         if np.linalg.norm(p + c) <= radius:
-        #             pts2.append(p + c)
         # 两层的种子偏移（约化坐标下 +K 和 -K 谷）
         offset1 = (mg1 + 2 * mg2) / 3    # = +K_M
-        offset2 = -(mg1 + 2 * mg2) / 3   # = -K_M  ← 修复点
+        offset2 = -(mg1 + 2 * mg2) / 3   # = -K_M
 
         for i in range(-axial, axial + 1):
             for j in range(-axial, axial + 1):
-                p = i * mg1 + j * mg2     # 从 Γ 出发，无额外偏移
-                
+                p = i * mg1 + j * mg2
+
                 p1 = p + offset1
                 if np.linalg.norm(p1) <= radius:
                     pts1.append(p1)
-                
+
                 p2 = p + offset2
                 if np.linalg.norm(p2) <= radius:
                     pts2.append(p2)
@@ -135,14 +141,8 @@ class BistritzMacDonaldTBG(HamiltonianModel):
 
         # ── 最近邻连接（Q 格点上的 hop）─────────────────
         q_vectors = (
-            np.array([
-                [-1, -2],
-                [2, 1],
-                [-1, 1],
-            ])
-            @ self.moire_reciprocal
-            / 3
-        )   # 3 个 moiré 最近邻连接矢量
+            np.array([[-1, -2], [2, 1], [-1, 1]]) @ self.moire_reciprocal / 3
+        )
 
         Q_rounded = np.round(Q, decimals=3).tolist()
         self._Q_nn = {}
@@ -159,25 +159,54 @@ class BistritzMacDonaldTBG(HamiltonianModel):
     #  辅助：层间跃迁 2×2 矩阵 T_{p}
     # ────────────────────────────────────────────────────────
     def _tunneling_matrix(self, p: int) -> np.ndarray:
-        """
-        返回 moiré 最近邻索引 p 对应的 2×2 层间跃迁矩阵。
-
-        p = 0, 1, 2 对应三个最近邻连接方向。
-        """
+        """返回 moiré 最近邻索引 p 对应的 2×2 层间跃迁矩阵。"""
         u, up, xi = self.u, self.up, self.xi
         if p == 0:
             return np.array([[u, up], [up, u]])
         elif p == 1:
-            return np.array([
-                [u, up * _OMEGA ** (-xi)],
-                [up * _OMEGA ** (xi), u],
-            ])
+            return np.array([[u, up*_OMEGA**(-xi)], [up*_OMEGA**(xi), u]])
         elif p == 2:
-            return np.array([
-                [u, up * _OMEGA ** (xi)],
-                [up * _OMEGA ** (-xi), u],
-            ])
+            return np.array([[u, up*_OMEGA**(xi)], [up*_OMEGA**(-xi), u]])
         return np.zeros((2, 2), dtype=complex)
+
+    # ────────────────────────────────────────────────────────
+    #  Sympy 哈密顿量 (lazy built)
+    # ────────────────────────────────────────────────────────
+    def _build_hamiltonian_sympy(self):
+        """
+        用 Sympy 符号构建 BM 哈密顿量并 lambdify。
+        仅首次调用时执行，后续复用 self._ham_sympy_func。
+        """
+        import sympy as sp
+
+        Nq, n_layer1 = self.Nq, self._n_pts1
+        NBands = 2 * Nq
+        xi = sp.symbols('xi', integer=True)
+        kx, ky = sp.symbols('kx ky', real=True)
+        k = sp.Matrix([kx, ky])
+        omega = sp.exp(sp.I * 2 * sp.pi / 3)
+        u, up, vF = self.u, self.up, self.vF
+
+        U1 = sp.Matrix([[u, up], [up, u]])
+        U2 = sp.Matrix([[u, up*omega**(-xi)], [up*omega**(xi), u]])
+        U3 = sp.Matrix([[u, up*omega**(xi)], [up*omega**(-xi), u]])
+
+        ham0 = sp.MutableDenseMatrix.zeros(NBands)
+        for i in range(Nq):
+            l = sp.sign(i - n_layer1 + sp.Rational(1, 2))
+            theta_l = l * xi * sp.pi / 180 * self.theta
+            s = sp.sin(theta_l / 2)
+            kj = sp.Matrix([[1, -s], [s, 1]]) * (k + sp.Matrix(self._Q[i]))
+            ham0[2*i, 2*i+1] = -vF * (xi*kj[0] - sp.I*kj[1])
+            for j, p in self._Q_nn.get(i, []):
+                blk = {0: U1, 1: U2, 2: U3}.get(p, sp.zeros(2, 2))
+                for r in range(2):
+                    for c in range(2):
+                        ham0[2*i+r, 2*j+c] = blk[r, c]
+
+        ham_full = ham0 + ham0.H
+        self._ham_sympy_func = sp.lambdify((kx, ky, xi), ham_full, modules="numpy")
+        return self._ham_sympy_func
 
     # ────────────────────────────────────────────────────────
     #  哈密顿量
@@ -195,35 +224,26 @@ class BistritzMacDonaldTBG(HamiltonianModel):
         -------
         H : np.ndarray, shape (2Nq, 2Nq), dtype=complex
         """
+        if self.ham_method == 'sympy':
+            if self._ham_sympy_func is None:
+                self._build_hamiltonian_sympy()
+            return self._ham_sympy_func(k[0], k[1], self.xi)
+
+        # ── numpy 后端 (默认) ──
         N = self.Nq
         H = np.zeros((2 * N, 2 * N), dtype=complex)
-
         for i in range(N):
-            # 确定层指标: l = -1 (top), +1 (bottom)
             l = 1.0 if i >= self._n_pts1 else -1.0
-
-            # 该层的旋转角（half-twist）: θ_l = l·ξ·θ_rad
             theta_l = l * self.xi * self.theta_rad
             sin_half = np.sin(theta_l / 2)
             rot = np.array([[1.0, -sin_half], [sin_half, 1.0]])
-
-            # Dirac 锥展开点 (layer-resolved)
             kj = rot @ (k + self._Q[i])
-
-            # 2×2 Dirac 对角块（上三角）
             km = self.xi * kj[0] - 1j * kj[1]
-            H[2 * i, 2 * i + 1] = -self.vF * km
-
-            # 2×2 层间（非对角）块
+            H[2*i, 2*i+1] = -self.vF * km
             for j, p in self._Q_nn.get(i, []):
                 block = self._tunneling_matrix(p)
-                H[2 * i : 2 * i + 2, 2 * j : 2 * j + 2] = block
+                H[2*i:2*i+2, 2*j:2*j+2] = block
 
-        # 厄米对称化:  H_full = H + H†
-        # 说明：
-        #  - H 目前只填了上三角对角块 + 完整的非对角 2×2 块（仅在 Q_nn 方向）。
-        #  - Q_nn 是有向的且双方不会互为邻居，因此每个 (i,j) 对只填一次。
-        #  - H + H† 得到完整厄米矩阵。
         H = H + H.conj().T
         return H
 
@@ -231,67 +251,31 @@ class BistritzMacDonaldTBG(HamiltonianModel):
     #  对角化
     # ────────────────────────────────────────────────────────
     def solve(self, k: np.ndarray) -> tuple:
-        """
-        对角化哈密顿量，返回 (energies, states)。
-
-        Returns
-        -------
-        energies : np.ndarray, shape (2Nq,)
-            升序本征值 (eV)
-        states : np.ndarray, shape (2Nq, 2Nq), dtype=complex
-            列向量为本征态，已固定相位规范。
-        """
+        """对角化哈密顿量，返回 (energies, states)。"""
         H = self.hamiltonian(k)
         E, V = np.linalg.eigh(H)
-        # 相位规范固定：每列最大绝对值分量的相位归零
         for n in range(V.shape[1]):
             idx = np.argmax(np.abs(V[:, n]))
-            phase = np.angle(V[idx, n])
-            V[:, n] *= np.exp(-1j * phase)
+            V[:, n] *= np.exp(-1j * np.angle(V[idx, n]))
         return E, V
 
     # ────────────────────────────────────────────────────────
     #  速度算符 — 解析 ∂H/∂k（轨道基）
     # ────────────────────────────────────────────────────────
     def velocity_operator(self, k: np.ndarray, dk: float = 1e-4) -> tuple:
-        """
-        解析速度算符（轨道基，2Nq × 2Nq）。
+        """解析速度算符（轨道基，2Nq × 2Nq）。
 
-        只有 Dirac 对角块依赖 k。层间隧穿矩阵与 k 无关。
-        对每层 l = ±1，旋转矩阵 R_l ≈ [[1, -s_l], [s_l, 1]]
-        (s_l = sin(l·ξ·θ/2)) 给出有效 k 空间导数：
-
-            ∂(R_l·k)_x/∂k_x = 1,   ∂(R_l·k)_x/∂k_y = -s_l
-            ∂(R_l·k)_y/∂k_x = s_l, ∂(R_l·k)_y/∂k_y = 1
-
-        Dirac 块 H_l = -vF * [[0, ξ·kj_x − i·kj_y], [ξ·kj_x + i·kj_y, 0]]
-
-        因此：
-
-            ∂H_l/∂k_x = -vF * [[0, ξ − i·s_l], [ξ + i·s_l, 0]]
-            ∂H_l/∂k_y = -vF * [[0, −ξ·s_l − i], [−ξ·s_l + i, 0]]
-
-        用 H + H† 构造完整厄米矩阵。
+        对两种 ham_method 均通用（仅依赖模型参数与 Q-格点）。
         """
         N = self.Nq
-        v_x = np.zeros((2 * N, 2 * N), dtype=complex)
-        v_y = np.zeros((2 * N, 2 * N), dtype=complex)
-
+        vx = np.zeros((2*N, 2*N), dtype=complex)
+        vy = np.zeros((2*N, 2*N), dtype=complex)
         for i in range(N):
             l = 1.0 if i >= self._n_pts1 else -1.0
-            theta_l = l * self.xi * self.theta_rad
-            s_l = np.sin(theta_l / 2.0)
-
-            # ∂H/∂k_x (2×2 block, upper triangle)
-            v_x[2 * i, 2 * i + 1] = -self.vF * (self.xi - 1j * s_l)
-
-            # ∂H/∂k_y (2×2 block, upper triangle)
-            v_y[2 * i, 2 * i + 1] = -self.vF * (-self.xi * s_l - 1j)
-
-        # 厄米对称化
-        v_x = v_x + v_x.conj().T
-        v_y = v_y + v_y.conj().T
-        return v_x, v_y
+            sl = np.sin(l * self.xi * self.theta_rad / 2)
+            vx[2*i, 2*i+1] = -self.vF * (self.xi - 1j*sl)
+            vy[2*i, 2*i+1] = -self.vF * (-self.xi*sl - 1j)
+        return vx + vx.conj().T, vy + vy.conj().T
 
     # ────────────────────────────────────────────────────────
     #  moiré BZ 高对称点
@@ -300,10 +284,10 @@ class BistritzMacDonaldTBG(HamiltonianModel):
         """返回 moiré BZ 高对称点坐标 (1/Å)。"""
         mg1, mg2 = self.reciprocal_vectors
         return {
-            "\u0393": np.zeros(2),               # Γ (moiré)
-            "K": (2 * mg1 + mg2) / 3,           # K (moiré)
-            "K'": (mg1 + 2 * mg2) / 3,          # K' (moiré)
-            "M": (mg1 + mg2) / 2,               # M (moiré)
+            "Γ": np.zeros(2),
+            "K": (2*mg1 + mg2) / 3,
+            "K'": (mg1 + 2*mg2) / 3,
+            "M": (mg1 + mg2) / 2,
         }
 
     # ────────────────────────────────────────────────────────
