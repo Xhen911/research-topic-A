@@ -53,7 +53,7 @@ class CachedModel:
     """
 
     def __init__(self, model, nk=24, nb_cache=None,
-                 n_q=None, q_max_factor=2.0,
+                 n_q=None, q_max_factor=2.0, q_eps=1e-6,
                  n_workers=None, verbose=True):
         self.model = model
         self.theta = getattr(model, 'theta', None)
@@ -93,7 +93,8 @@ class CachedModel:
             self.Nq = max(2, int(round(q_max / q_spacing)))
             self.Nq = min(self.Nq, n_q)
 
-            q_mag = np.linspace(self.Nq, 1, self.Nq) / self.Nq * q_max
+            q_mag = np.linspace(self.Nq + q_eps, 1 + q_eps, self.Nq)
+            q_mag = q_mag / (self.Nq + q_eps) * q_max
             q_dir = hs['K'] / kf
             self.q_cart = np.array([qi * q_dir for qi in q_mag])
             self.q_norms = np.linalg.norm(self.q_cart, axis=1)
