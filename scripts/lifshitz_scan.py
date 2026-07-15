@@ -79,7 +79,8 @@ def analyze_theta(theta, nk=24, n_shells=4, method='triangle',
     # ── Sum-rule check ──
     nb_flat = flat_slice.stop - flat_slice.start
     ok, integral, expected = check_dos_sum_rule(
-        E, dos, g=model_dummy.degeneracy_factor(), nb=nb_flat)
+        E, dos, g=model_dummy.degeneracy_factor(), nb=nb_flat,
+        area_BZ=abs(np.linalg.det(model_dummy.reciprocal_vectors)))
     if not ok:
         print(f'  ⚠ DOS sum-rule: ∫DdE={integral:.3f} vs g·nb={expected:.1f}')
 
