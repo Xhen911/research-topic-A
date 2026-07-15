@@ -34,6 +34,7 @@ from src.response.dos import (
     compute_dos, compute_dos_triangle,
     find_vhs_peaks, find_vhs_derivative,
     compute_filling, compute_cnp,
+    check_dos_sum_rule,
 )
 
 
@@ -75,10 +76,17 @@ def analyze_theta(theta, nk=24, n_shells=4, method='triangle',
                              E_k=E_k[:, flat_slice],
                              k_cart=cache.k_cart)
 
+    # ── Sum-rule check ──
+    nb_flat = flat_slice.stop - flat_slice.start
+    ok, integral, expected = check_dos_sum_rule(
+        E, dos, g=model_dummy.degeneracy_factor(), nb=nb_flat)
+    if not ok:
+        print(f'  ⚠ DOS sum-rule: ∫DdE={integral:.3f} vs g·nb={expected:.1f}')
+
     # ── VHS ──
     vhs_peaks = find_vhs_peaks(E, dos)
     vhs_deriv = find_vhs_derivative(E, dos)
-    dedup_tol = max(2 * (eta if method == 'triangle' else sigma), 0.01e-3)
+    dedup_tol = max(3 * (E[1] - E[0]), 0.1e-3)
     all_vhs = []
     for ev in sorted(vhs_peaks + [v['E_vhs'] for v in vhs_deriv]):
         if all(abs(ev - e0) > dedup_tol for e0 in all_vhs):
