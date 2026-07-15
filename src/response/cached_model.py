@@ -93,8 +93,8 @@ class CachedModel:
             self.Nq = max(2, int(round(q_max / q_spacing)))
             self.Nq = min(self.Nq, n_q)
 
-            q_mag = np.linspace(self.Nq + q_eps, 1 + q_eps, self.Nq)
-            q_mag = q_mag / (self.Nq + q_eps) * q_max
+            q_mag = np.linspace(self.Nq, 1, self.Nq) / self.Nq * q_max
+            q_mag = q_mag + q_eps  # directional offset to avoid q=0
             q_dir = hs['K'] / kf
             self.q_cart = np.array([qi * q_dir for qi in q_mag])
             self.q_norms = np.linalg.norm(self.q_cart, axis=1)
