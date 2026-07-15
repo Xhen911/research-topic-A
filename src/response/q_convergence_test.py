@@ -154,6 +154,7 @@ def run(
     n_shells=4,
     n_q=20,
     q_max_factor=2.0,
+    nb_cache=32,
     q_eps_values=None,
     n_q_eps=8,
     omg_factor=600.0,
@@ -183,7 +184,14 @@ def run(
     from .dos import compute_cnp
 
     model = BistritzMacDonaldTBG(theta=theta, n_shells=n_shells)
-    cache = CachedModel(model, nk=nk, n_q=n_q, q_max_factor=q_max_factor)
+    cache_path = f'eig-cache-theta{theta:.2f}-nk{nk}-nb{nb_cache}.npz'
+    import os
+    if os.path.exists(cache_path):
+        cache = CachedModel.load(cache_path)
+    else:
+        cache = CachedModel(model, nk=nk, n_q=n_q, q_max_factor=q_max_factor,
+                            nb_cache=nb_cache)
+        cache.save(cache_path)
     w_values = default_w_values(theta, omg_factor=omg_factor, domg=domg)
     Ef = compute_cnp(cache.E_k)
 
