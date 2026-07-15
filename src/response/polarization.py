@@ -433,3 +433,93 @@ def lindhard_from_cache(
                     pi0_inter[:, iq] += contrib
 
     return {'intra': pi0_intra, 'inter': pi0_inter}
+
+
+# ============================================================
+#  Cached Lindhard — 复用 CachedModel 的预计算 q-loop
+# ============================================================
+
+def lindhard_from_cache(
+    cache,
+    q_values,
+    w_values,
+    eta=0.01,
+    beta=100.0,
+    Ef=0.0,
+    form=True,
+    use_tqdm=True,
+):
+    """Lindhard polarisation using pre-cached k+q eigenvalues/states.
+
+    Avoids repeated diagonalisation — requires a CachedModel built
+    with n_q > 0.  All q-point eigenvalues/states are read from
+    ``cache.E_q`` and ``cache.V_q``.
+
+    Parameters
+    ----------
+    cache : CachedModel
+        Must have ``E_q`` and ``V_q`` (built with n_q > 0).
+    q_values : np.ndarray, shape (nq,)
+        q-vector magnitudes (Å⁻¹).  Must align with cache.q_norms.
+    w_values : np.ndarray, shape (nw,)
+        Frequency grid (eV).
+    eta : float
+        Lorentzian broadening (eV).
+    beta : float
+        Inverse temperature 1/(k_B T) (eV⁻¹).
+    Ef : float
+        Fermi energy (eV).
+    form : bool
+        Whether to use form factor |⟨k+q|k⟩|².
+    use_tqdm : bool
+
+    Returns
+    -------
+    dict  {'intra': pi0_intra, 'inter': pi0_inter}
+        Each (nw, nq) complex128.
+    """
+    Nk = cache.Nk
+    nb = cache.E_k.shape[1]
+    nq = len(q_values)
+    nw = len(w_values)
+
+    deg = cache.model.degeneracy_factor() if cache.model else 4
+    vol_BZ = abs(np.linalg.det(cache.model.reciprocal_vectors)) if cache.model else 1.0
+    integral_const = deg / (2 * np.pi) ** 2 * vol_BZ / Nk
+
+    pi0_intra = np.zeros((nw, nq), dtype=complex)
+    pi0_inter = np.zeros((nw, nq), dtype=complex)
+
+    _range = range(nq)
+    if use_tqdm:
+        try:
+            from tqdm import tqdm
+            _range = tqdm(_range, desc="Lindhard(cached)")
+        except ImportError:
+            pass
+
+    for iq in _range:
+        E_q = cache.E_q[iq]              # (Nk, nb)
+        V_q = cache.V_q[iq]              # (Nk, n_orbitals, nb_cache)
+        E_k = cache.E_k                  # (Nk, nb)
+
+        # Form factor |⟨m,k+q|n,k⟩|²
+        if form and cache.V_k is not None:
+            M = np.abs(np.einsum('kbm,kbn->kmn', V_q.conj(), cache.V_k)) ** 2
+        else:
+            M = np.ones((Nk, nb, nb))
+
+        for m in range(nb):
+            for n in range(nb):
+                f_mn = M[:, m, n] if form else np.ones(Nk)
+                f0 = fermi_dirac(E_k[:, n], Ef, beta)
+                fq = fermi_dirac(E_q[:, m], Ef, beta)
+                dE = E_q[:, m] - E_k[:, n]
+                denom = -dE[np.newaxis, :] + w_values[:, np.newaxis] + 1j * eta
+                contrib = np.sum(f_mn * (f0 - fq) / denom, axis=1) * integral_const
+                if m == n:
+                    pi0_intra[:, iq] += contrib
+                else:
+                    pi0_inter[:, iq] += contrib
+
+    return {'intra': pi0_intra, 'inter': pi0_inter}
