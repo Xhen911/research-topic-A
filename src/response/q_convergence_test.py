@@ -135,3 +135,73 @@ def recommend_offset(eps_values, spectra, tol=1e-3):
             return eps_values[max(0, i - 1)]
 
     return eps_values[-1]  # all converged — use largest safe value
+
+
+def default_w_values(theta, omg_factor=600.0, domg=0.05e-3):
+    """Generate default frequency grid matching scan_response convention.
+
+    w_range = omg_factor * ef_scale (ef_scale = 1.53911e-3 eV for TBG).
+    """
+    ef_scale = 1.53911e-3
+    omg_rng = omg_factor * ef_scale
+    nomg = int(round(omg_rng / domg))
+    return np.linspace(omg_rng / nomg, omg_rng, nomg)
+
+
+def run(
+    theta=1.05,
+    nk=24,
+    n_shells=4,
+    n_q=20,
+    q_max_factor=2.0,
+    q_eps_values=None,
+    n_q_eps=8,
+    omg_factor=600.0,
+    domg=0.05e-3,
+    eta=0.3e-3,
+    kBT=0.1e-3,
+    plot=True,
+):
+    """Fully self-contained convergence test: builds model + cache + runs sweep.
+
+    Parameters
+    ----------
+    theta : float — twist angle (degrees).
+    nk, n_shells, n_q, q_max_factor : passed to CachedModel.
+    q_eps_values : list or None — manual eps values to test.
+    n_q_eps : int — number of auto eps values.
+    omg_factor, domg : frequency grid params.
+    eta, kBT : physical parameters.
+    plot : bool — whether to plot the result.
+
+    Returns
+    -------
+    eps_values, spectra, recommended_eps
+    """
+    from ..models import BistritzMacDonaldTBG
+    from .cached_model import CachedModel
+    from .dos import compute_cnp
+
+    model = BistritzMacDonaldTBG(theta=theta, n_shells=n_shells)
+    cache = CachedModel(model, nk=nk, n_q=n_q, q_max_factor=q_max_factor)
+    w_values = default_w_values(theta, omg_factor=omg_factor, domg=domg)
+    Ef = compute_cnp(cache.E_k)
+
+    eps_values, spectra = run_convergence_test(
+        cache, w_values, eta=eta, Ef=Ef, kBT=kBT,
+        q_eps_values=q_eps_values, n_q_eps=n_q_eps,
+    )
+    recommended = recommend_offset(eps_values, spectra)
+
+    print(f'q=0 convergence test: theta={theta}, nk={nk}')
+    print(f'  q step = {cache.q_norms[-1]:.4e}')
+    print(f'  eps range = [{eps_values[0]:.1e}, {eps_values[-1]:.1e}]')
+    print(f'  recommended q_eps = {recommended:.1e}')
+
+    if plot:
+        fig, _ = plot_convergence(eps_values, spectra, w_values)
+        if fig is not None:
+            fig.savefig(f'q_convergence_theta{theta:.2f}.png', dpi=150, bbox_inches='tight')
+            print(f'  plot saved: q_convergence_theta{theta:.2f}.png')
+
+    return eps_values, spectra, recommended
