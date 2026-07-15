@@ -89,6 +89,8 @@ def main():
     parser.add_argument('--eta', type=float, default=ETA)
     parser.add_argument('--cache-dir', default='.')
     parser.add_argument('--save-cache', action='store_true')
+    parser.add_argument('--q-eps', type=float, default=0.0,
+                        help='q-offset to avoid q=0 singularity (step/1000 typical)')
     args = parser.parse_args()
 
     ef_scale = 1.53911e-3
@@ -117,7 +119,8 @@ def main():
         else:
             model = BistritzMacDonaldTBG(theta=theta, n_shells=args.n_shells)
             cache = CachedModel(model, nk=args.nk, n_q=args.n_q,
-                                q_max_factor=args.q_max_factor)
+                                q_max_factor=args.q_max_factor,
+                                q_eps=args.q_eps)
             if args.save_cache:
                 cache.save(cache_path)
 
