@@ -818,8 +818,8 @@ def _lehmann_I0_broadened(e1, e2, e3, z, area, thr=1e-10):
 #  DOS 求和规则验证
 # ============================================================
 
-def check_dos_sum_rule(E, dos, g=None, nb=None, tol=1e-3):
-    """Verify ∫ DOS(E) dE = g · nb (per unit cell).
+def check_dos_sum_rule(E, dos, g=None, nb=None, area_BZ=None, tol=1e-3):
+    """Verify ∫ DOS(E) dE = g · nb · A_BZ/(2π)².
 
     The integral of DOS over all energies must equal g (degeneracy)
     times nb (number of bands).  This holds for ANY k-mesh resolution
@@ -845,8 +845,9 @@ def check_dos_sum_rule(E, dos, g=None, nb=None, tol=1e-3):
         nb = 1
         _trapz = getattr(np, "trapezoid", np.trapz)
     integral = float(_trapz(dos, E))
-    expected = float(g * nb)
-    rel_err = abs(integral - expected) / max(expected, 1e-30)
+    area_factor = area_BZ / (2.0 * np.pi) ** 2 if area_BZ is not None else 1.0
+    expected = float(g * nb * area_factor)
+    rel_err = abs(integral - expected) / max(abs(expected), 1e-30)
     ok = rel_err < tol
     if not ok:
         import warnings
