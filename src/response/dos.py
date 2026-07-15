@@ -843,7 +843,8 @@ def check_dos_sum_rule(E, dos, g=None, nb=None, tol=1e-3):
         g = 4
     if nb is None:
         nb = 1
-    integral = float(np.trapz(dos, E))
+        _trapz = getattr(np, "trapezoid", np.trapz)
+    integral = float(_trapz(dos, E))
     expected = float(g * nb)
     rel_err = abs(integral - expected) / max(expected, 1e-30)
     ok = rel_err < tol
@@ -917,7 +918,8 @@ def compute_filling(E_k, Ef, band_slice=None, kBT=0.1e-3,
     x = np.clip((E_k - Ef) / kBT, -80.0, 80.0)
     f = 1.0 / (1.0 + np.exp(x))
     occ_per_k = f.sum(axis=1)
-    return degeneracy * (np.mean(occ_per_k) - occ_per_k.size / E_k.shape[1])
+        nb_sel = E_k.shape[1]
+    return degeneracy * (np.mean(occ_per_k) - nb_sel / 2.0)
 
 
 def compute_cnp(E_k, band_slice=None, kBT=0.1e-3,
@@ -940,7 +942,8 @@ def compute_cnp(E_k, band_slice=None, kBT=0.1e-3,
         x = np.clip((E_k - mid) / kBT, -80.0, 80.0)
         f = 1.0 / (1.0 + np.exp(x))
         occ_mean = np.mean(f.sum(axis=1))
-        if occ_mean < 1.0:
+                nb_sel = E_k.shape[1]
+        if occ_mean < nb_sel / 2.0:
             lo = mid
         else:
             hi = mid
