@@ -76,7 +76,7 @@ class CachedModel:
         for i in range(self.Nk):
             Ei, Vi = model.solve(self.k_cart[i])
             self.E_k[i] = Ei
-            self.V_k[i] = Vi[:, bs]
+            self.V_k[i] = Vi[:, self.bs_cache]
 
         # ── q-loop (optional) ──
         self.E_q = None
