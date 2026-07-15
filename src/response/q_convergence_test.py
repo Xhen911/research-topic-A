@@ -70,7 +70,7 @@ def run_convergence_test(cache, w_values, eta=0.3e-3,
     }
 
     for i, eps in enumerate(q_eps_values):
-        pi0 = lindhard_from_cache(cache, cache.q_norms, w_values,
+        pi0 = lindhard_from_cache(cache, cache.q_norms, w_values, q_eps=eps,
                                    eta=eta, beta=1.0/max(kBT, 1e-4),
                                    Ef=Ef, q_eps=eps)
         spectra['intra'][i] = pi0['intra'][:, -1]  # smallest q
