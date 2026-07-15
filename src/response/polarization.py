@@ -390,7 +390,8 @@ def lindhard_from_cache(
         Each (nw, nq) complex128.
     """
     Nk = cache.Nk
-    nb = cache.E_k.shape[1]
+    nb = cache.nb_cache
+    bs = cache.bs_cache
     nq = len(q_values)
     nw = len(w_values)
 
@@ -412,9 +413,9 @@ def lindhard_from_cache(
     for iq in _range:
         # Optionally shift q=0 values by eps to avoid singularity
         _q_val = max(q_values[iq], q_eps) if q_eps > 0 else q_values[iq]
-        E_q = cache.E_q[iq]              # (Nk, nb)
+        E_q = cache.E_q[iq][:, bs]    # (Nk, nb_cache)
         V_q = cache.V_q[iq]              # (Nk, n_orbitals, nb_cache)
-        E_k = cache.E_k                  # (Nk, nb)
+        E_k = cache.E_k[:, bs]         # (Nk, nb_cache)
 
         # Form factor |⟨m,k+q|n,k⟩|²
         if form and cache.V_k is not None:
@@ -483,7 +484,8 @@ def lindhard_from_cache(
         Each (nw, nq) complex128.
     """
     Nk = cache.Nk
-    nb = cache.E_k.shape[1]
+    nb = cache.nb_cache
+    bs = cache.bs_cache
     nq = len(q_values)
     nw = len(w_values)
 
@@ -505,9 +507,9 @@ def lindhard_from_cache(
     for iq in _range:
         # Optionally shift q=0 values by eps to avoid singularity
         _q_val = max(q_values[iq], q_eps) if q_eps > 0 else q_values[iq]
-        E_q = cache.E_q[iq]              # (Nk, nb)
+        E_q = cache.E_q[iq][:, bs]    # (Nk, nb_cache)
         V_q = cache.V_q[iq]              # (Nk, n_orbitals, nb_cache)
-        E_k = cache.E_k                  # (Nk, nb)
+        E_k = cache.E_k[:, bs]         # (Nk, nb_cache)
 
         # Form factor |⟨m,k+q|n,k⟩|²
         if form and cache.V_k is not None:
