@@ -11,8 +11,15 @@ Pipeline:
 
 Usage
 -----
-    python scripts/scan_response.py --theta 1.05 --nu 0 --nk 24
+    # Form-factor-ones (verified convergence, q_eps=3.3e-6):
+    python scripts/scan_response.py --theta 1.05 --nu 0 --nk 24 \\
+        --q-eps 3.3e-6 --no-form --save-cache
 
+    # Real form factors (physics default):
+    python scripts/scan_response.py --theta 1.05 --nu 0 --nk 24 \\
+        --q-eps 1e-4 --save-cache
+
+    # Batch multi-angle:
     python scripts/scan_response.py --theta 0.80 0.99 1.05 1.08 1.16 1.47 \\
         --nu -4 -2 0 2 4 --nk 24 --save-cache
 """
@@ -35,8 +42,16 @@ KAPPA_ENV = 3.0
 VQ_CONST = 90.5 / KAPPA_ENV
 
 
-def assemble_response(cache, Ef, w_values, eta=ETA):
+def assemble_response(cache, Ef, w_values, eta=ETA, form=True, q_eps=0.0):
     """Compute chi0, epsilon, loss from cached eig.
+
+    Parameters
+    ----------
+    form : bool
+        Whether to use form factor |<k+q|k>|^2.  False = all-ones
+        (verified to converge at q_eps ~ dq/1000).
+    q_eps : float
+        Passed through to lindhard_from_cache for q=0 floor.
 
     Returns
     -------
@@ -45,8 +60,8 @@ def assemble_response(cache, Ef, w_values, eta=ETA):
     """
     pi0 = lindhard_from_cache(
         cache, cache.q_norms, w_values,
-        eta=eta, beta=1.0 / max(KBT, 1e-4), Ef=Ef,
-        use_tqdm=True,
+        q_eps=q_eps, eta=eta, beta=1.0 / max(KBT, 1e-4), Ef=Ef,
+        form=form, use_tqdm=True,
     )
     p0 = pi0['intra'] + pi0['inter']      # (nw, nq)
 
@@ -72,7 +87,8 @@ def save_results(results, cache, nu, w_values, outdir='.'):
              q_norms=cache.q_norms, w_values=w_values,
              Nq=cache.Nq, nk=cache.nk, Nk=cache.Nk,
              nb_cache=cache.nb_cache, theta_deg=theta, nu=nu,
-             eta=ETA, kBT=KBT, kappa_env=KAPPA_ENV)
+             eta=ETA, kBT=KBT, kappa_env=KAPPA_ENV,
+             use_form=results.get('use_form', True))
     print(f'    Saved: p0/eps/loss/grid-info-{tag}.*')
 
 
@@ -92,7 +108,14 @@ def main():
                         help='Bands to cache around CNP (default 32)')
     parser.add_argument('--save-cache', action='store_true')
     parser.add_argument('--q-eps', type=float, default=0.0,
-                        help='q-offset to avoid q=0 singularity (step/1000 typical)')
+                        help='q-offset to avoid q=0 singularity. '
+                             'With --no-form: 3.3e-6 (dq/1000) verified. '
+                             'With --form: 1e-4 (conservative default).')
+    parser.add_argument('--form', dest='use_form', action='store_true',
+                        default=True,
+                        help='Use real form factor |<k+q|k>|^2 (default)')
+    parser.add_argument('--no-form', dest='use_form', action='store_false',
+                        help='Use all-ones form factor (verified q-convergence)')
     args = parser.parse_args()
 
     ef_scale = 1.53911e-3
@@ -106,7 +129,9 @@ def main():
     print(f'  theta:  {args.theta}')
     print(f'  nu:     {args.nu}')
     print(f'  nk={args.nk}, nq={args.n_q}, nomg={nomg}')
-    print(f'  save_cache: {args.save_cache}')
+    print(f'  form_factor: {args.use_form}')
+    print(f'  q_eps:       {args.q_eps:.1e}')
+    print(f'  save_cache:  {args.save_cache}')
     print('=' * 64)
 
     for theta in args.theta:
@@ -146,7 +171,11 @@ def main():
             print(f'  Ef(nu={nu}) = {Ef*1e3:.3f} meV')
 
             t0 = time.time()
-            results, _ = assemble_response(cache, Ef, w_values, eta=args.eta)
+            results, _ = assemble_response(cache, Ef, w_values,
+                                           eta=args.eta,
+                                           form=args.use_form,
+                                           q_eps=args.q_eps)
+            results['use_form'] = args.use_form
             save_results(results, cache, nu, w_values, outdir=args.cache_dir)
             print(f'  time: {time.time()-t0:.1f}s')
 
