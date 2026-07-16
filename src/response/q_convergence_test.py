@@ -70,35 +70,40 @@ def _chi0_single_q(E_k, V_k, E_q, V_q, w_values, Ef, kBT, eta,
     return pi0_intra, pi0_inter, pi0_intra + pi0_inter
 
 
-def convergence_metric(spectra):
-    """Pairwise convergence metric between adjacent epsilon values.
+def convergence_metric(eps_values, spectra):
+    """Pairwise convergence metric, sorted ascending by eps.
 
-    For each pair (eps[i], eps[i+1]):
-        err = max_w |chi_i(w) - chi_{i+1}(w)| / max(|chi_{i+1}(w)|, 1e-12)
-
-    Returns (n_eps-1,) array.
+    Returns:
+        eps_sorted (n_eps,) — ascending
+        errs (n_eps-1,) — |chi[i]-chi[i+1]|/|chi[i+1]|
     """
+    eps_arr = np.asarray(eps_values)
+    order = np.argsort(eps_arr)
+    eps_sorted = eps_arr[order]
+    chi_total = spectra['total'][order]
     errs = []
-    chi_total = spectra['total']
     for i in range(len(chi_total) - 1):
         ref = np.maximum(np.abs(chi_total[i + 1]), 1e-12)
         e = np.max(np.abs(chi_total[i] - chi_total[i + 1]) / ref)
         errs.append(e)
-    return np.array(errs)
+    return eps_sorted, np.array(errs)
+
 
 
 def recommend_offset(eps_values, spectra, tol=1e-3):
-    """Recommend a safe q_eps based on plateau behaviour.
+    """Recommend a safe q_eps from the convergence plateau.
 
-    Returns the largest eps whose spectrum differs from the next
-    by less than tol.
+    Sorts eps ascending, then scans from small to large.
+    Returns the largest eps where the spectrum is still within tol
+    of the next value (i.e., still in the plateau).
     """
-    errs = convergence_metric(spectra)
+    eps_sorted, errs = convergence_metric(eps_values, spectra)
+    if len(errs) == 0:
+        return eps_sorted[0]
     for i in range(len(errs)):
         if errs[i] > tol:
-            return eps_values[max(0, i - 1)]
-    return eps_values[-1]
-
+            return eps_sorted[i]
+    return eps_sorted[-1]
 
 def plot_convergence(eps_values, spectra, w_values, errors=None,
                      figsize=(10, 8)):
@@ -232,8 +237,8 @@ def run(
         spectra['total'][i] = total
         print(f'  eps={eps:.1e} done')
 
-    errors = convergence_metric(spectra)
-    recommended = recommend_offset(q_eps_values, spectra)
+    _, errors = convergence_metric(eps_values, spectra)
+    recommended = recommend_offset(eps_values, spectra)
     eps_arr = np.array(q_eps_values)
 
     print(f'  pairwise errors: {[f"{e:.2e}" for e in errors]}')
