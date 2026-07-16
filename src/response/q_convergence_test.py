@@ -1,20 +1,19 @@
 # -*- coding: utf-8 -*-
-"""q_convergence_test.py — Verify q-offset ε convergence for chi0(q,omega) at small q.
-============================================================================
+"""q_convergence_test.py — q->0 convergence test via single-q diagonalisation.
+=================================================================================
 
-Sweep q_eps over 3-4 orders of magnitude and check if the response
-spectrum at the smallest q point converges to a plateau.  If the plateau
-is flat, the offset is in the "safe" window — sampling the genuine
-q→0+ limit rather than finite-q physics or floating-point noise.
+Instead of building a full q-loop CachedModel, only diagonalises at
+k + q_eps for each trial offset, then computes chi(q_eps, omega)
+for just that one q point.  This avoids building the entire q-path
+and is fast enough for interactive use.
+
+Provides a quantitative convergence metric: relative spectral error
+between adjacent epsilon values.
 
 Usage
 -----
-    # Quick test on a CachedModel
-    python -m src.response.q_convergence_test cache.npz
-
-    # Sweep and plot
-    from src.response.q_convergence_test import run_convergence_test
-    eps_values, spectra = run_convergence_test(cache, w_values)
+    from src.response.q_convergence_test import run
+    eps, spectra, errors, rec = run(theta=1.05, nk=24, nb_cache=32)
 
 Reference
 ---------
@@ -23,199 +22,220 @@ Reference
 
 import numpy as np
 
-def run_convergence_test(cache, w_values, eta=0.3e-3,
-                         q_eps_values=None, n_q_eps=8, Ef=0.0,
-                         kBT=0.1e-3):
-    """Sweep q_eps over 3-4 decades and return chi0(q_first, omega) for each.
-
-    Parameters
-    ----------
-    cache : CachedModel — must have q-loop (n_q > 0) and a model attribute.
-    w_values : (nw,) — frequency grid (eV).
-    eta : float — Lindhard broadening.
-    q_eps_values : list of float or None
-        If None, auto-generated: [step/10^4, step/10^3, step/10^2, step/10, step, step*10]
-        where step = cache.q_norms[0] (first q magnitude).
-    n_q_eps : int — number of eps values (ignored if q_eps_values given).
-    Ef : float — Fermi energy.
-    kBT : float — temperature (eV).
-
-    Returns
-    -------
-    eps_values : (n,)
-    spectra : dict
-        {'intra': (n, nw,), 'inter': (n, nw), 'total': (n, nw)}
-        where total = intra + inter, all complex128.
-    """
-    from .polarization import lindhard_from_cache
-    from .dos import compute_cnp
-
-    # dq_q = smallest q spacing in the mesh (= q_max / Nq)
-    dq_q = cache.q_norms[0] - cache.q_norms[1] if len(cache.q_norms) > 1 else cache.q_norms[0]
-    if abs(dq_q) < 1e-12:
-        dq_q = cache.q_norms[0] / 10
-    dq_q = abs(dq_q)
-    if q_eps_values is None:
-        # Relative ratios q_eps / dq_q
-        ratios = [1e-3, 1e-4, 1e-5, 1e-6]
-        q_eps_values = [dq_q * r for r in ratios]
-        # Filter: keep only values < dq_q (physical offset should be within the step)
-        q_eps_values = [v for v in q_eps_values if v < dq_q / 2]
-
-    if Ef is None:
-        Ef = compute_cnp(cache.E_k) if hasattr(cache, 'E_k') else 0.0
-
-    n = len(q_eps_values)
-    nw = len(w_values)
-    spectra = {
-        'intra': np.zeros((n, nw), dtype=complex),
-        'inter': np.zeros((n, nw), dtype=complex),
-        'total': np.zeros((n, nw), dtype=complex),
-        'eps_values': np.array(q_eps_values),
-    }
-
-    for i, eps in enumerate(q_eps_values):
-        pi0 = lindhard_from_cache(cache, cache.q_norms, w_values,
-                                   eta=eta, beta=1.0/max(kBT, 1e-4),
-                                   Ef=Ef, q_eps=eps)
-        spectra['intra'][i] = pi0['intra'][:, -1]  # smallest q
-        spectra['inter'][i] = pi0['inter'][:, -1]
-        spectra['total'][i] = pi0['intra'][:, -1] + pi0['inter'][:, -1]
-
-    return np.array(q_eps_values), spectra
-
-
-def plot_convergence(eps_values, spectra, w_values, figsize=(10, 6)):
-    """Plot convergence diagnostic: Im[chi0(w, q_first)] vs frequency, colored by eps.
-
-    Returns fig, axes.
-    """
-    try:
-        import matplotlib.pyplot as plt
-    except ImportError:
-        return None, None
-
-    n = len(eps_values)
-    cmap = plt.cm.viridis
-    colors = [cmap(i / max(n - 1, 1)) for i in range(n)]
-
-    fig, axes = plt.subplots(1, 3, figsize=figsize, sharey=True, sharex=True)
-
-    for title, key, ax in zip(
-        ['Im[chi0_intra]', 'Im[chi0_inter]', 'Im[chi0_total]'],
-        ['intra', 'inter', 'total'],
-        axes,
-    ):
-        for i, eps in enumerate(eps_values):
-            ax.plot(w_values, -spectra[key][i].imag, color=colors[i],
-                    lw=1.0, alpha=0.7,
-                    label=f'{eps:.2e}' if i in [0, n//2, n-1] else None)
-        ax.set_xlabel('omega (eV)')
-        ax.set_title(title)
-        ax.legend(fontsize=7, title='q_eps')
-
-    axes[0].set_ylabel('-Im[chi]')
-    fig.suptitle('q->0 convergence test: sweep epsilon offset over 3-4 decades',
-                 fontweight='bold')
-    fig.tight_layout()
-    return fig, axes
-
-
-def recommend_offset(eps_values, spectra, tol=1e-3):
-    """Recommend a safe q_eps value based on plateau behaviour.
-
-    Looks for the largest eps that gives spectrum within tol
-    of the spectrum at the smallest eps tested.
-
-    Returns recommended q_eps (float).
-    """
-    ref = spectra['total'][0]  # smallest eps
-    norm = np.max(np.abs(ref))
-    if norm < 1e-30:
-        return eps_values[0]
-
-    for i in range(1, len(eps_values)):
-        diff = np.max(np.abs(spectra['total'][i] - ref))
-        if diff / max(norm, 1e-30) > tol:
-            return eps_values[max(0, i - 1)]
-
-    return eps_values[-1]  # all converged — use largest safe value
+PI = np.pi
 
 
 def default_w_values(theta, omg_factor=600.0, domg=0.05e-3):
-    """Generate default frequency grid matching scan_response convention.
-
-    w_range = omg_factor * ef_scale (ef_scale = 1.53911e-3 eV for TBG).
-    """
+    """Generate default frequency grid."""
     ef_scale = 1.53911e-3
     omg_rng = omg_factor * ef_scale
     nomg = int(round(omg_rng / domg))
     return np.linspace(omg_rng / nomg, omg_rng, nomg)
 
 
+def _chi0_single_q(E_k, V_k, E_q, V_q, w_values, Ef, kBT, eta,
+                    degeneracy, S_norm):
+    """Lindhard chi0 for a single q point, using pre-diagonalised k and k+q.
+
+    Returns intra, inter, total — each (nw,) complex128.
+    Uses nb_cache bands for form-factor consistency.
+    """
+    from .polarization import fermi_dirac
+    Nk, nb = V_k.shape[0], V_k.shape[2]  # nb = nb_cache
+    nw = len(w_values)
+
+    M = np.abs(np.einsum('kbm,kbn->kmn', V_q.conj(), V_k)) ** 2
+
+    f_k = fermi_dirac(E_k, Ef, 1.0 / max(kBT, 1e-4))[:, :nb]
+    f_q = fermi_dirac(E_q, Ef, 1.0 / max(kBT, 1e-4))[:, :nb]
+    f_diff = f_k[:, :, None] - f_q[:, None, :]
+    ediff = E_k[:, :nb, None] - E_q[:, None, :nb]
+    num = -degeneracy / S_norm * f_diff * M
+
+    pi0_intra = np.zeros(nw, dtype=complex)
+    pi0_inter = np.zeros(nw, dtype=complex)
+
+    for m in range(nb):
+        for n in range(nb):
+            denom = -ediff[:, m, n, None] + w_values + 1j * eta
+            contrib = np.sum(num[:, m, n, None] / denom, axis=0)
+            if m == n:
+                pi0_intra += contrib
+            else:
+                pi0_inter += contrib
+
+    return pi0_intra, pi0_inter, pi0_intra + pi0_inter
+
+
+def convergence_metric(spectra):
+    """Pairwise convergence metric between adjacent epsilon values.
+
+    For each pair (eps[i], eps[i+1]):
+        err = max_w |chi_i(w) - chi_{i+1}(w)| / max(|chi_{i+1}(w)|, 1e-12)
+
+    Returns (n_eps-1,) array.
+    """
+    errs = []
+    chi_total = spectra['total']
+    for i in range(len(chi_total) - 1):
+        ref = np.maximum(np.abs(chi_total[i + 1]), 1e-12)
+        e = np.max(np.abs(chi_total[i] - chi_total[i + 1]) / ref)
+        errs.append(e)
+    return np.array(errs)
+
+
+def recommend_offset(eps_values, spectra, tol=1e-3):
+    """Recommend a safe q_eps based on plateau behaviour.
+
+    Returns the largest eps whose spectrum differs from the next
+    by less than tol.
+    """
+    errs = convergence_metric(spectra)
+    for i in range(len(errs)):
+        if errs[i] > tol:
+            return eps_values[max(0, i - 1)]
+    return eps_values[-1]
+
+
+def plot_convergence(eps_values, spectra, w_values, errors=None,
+                     figsize=(10, 8)):
+    """2x2 plot: Im[chi] spectra + convergence error vs epsilon."""
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError:
+        return None, None
+
+    fig, axes = plt.subplots(2, 2, figsize=figsize)
+
+    n = len(eps_values)
+    cmap = plt.cm.viridis
+    colors = [cmap(i / max(n - 1, 1)) for i in range(n)]
+
+    for ax, key, title in zip(
+        axes[0], ['intra', 'inter'],
+        ['Im[chi_intra]', 'Im[chi_inter]'],
+    ):
+        for i, eps in enumerate(eps_values):
+            ax.plot(w_values, -spectra[key][i].imag, color=colors[i],
+                    lw=1.0, alpha=0.7,
+                    label=f'{eps:.1e}' if i in [0, n // 2, n - 1] else None)
+        ax.set_xlabel('omega (eV)')
+        ax.set_title(title)
+        ax.legend(fontsize=7, title='q_eps')
+
+    ax = axes[1, 0]
+    for i, eps in enumerate(eps_values):
+        ax.plot(w_values, -spectra['total'][i].imag, color=colors[i],
+                lw=1.0, alpha=0.7)
+    ax.set_xlabel('omega (eV)')
+    ax.set_title('Im[chi_total]')
+
+    ax = axes[1, 1]
+    if errors is None:
+        errors = convergence_metric(spectra)
+    ax.loglog(eps_values[1:], errors, 'ko-', lw=1.5, markersize=6)
+    ax.set_xlabel('q_eps (1/A)')
+    ax.set_ylabel('rel. error between adjacent eps')
+    ax.set_title('Convergence metric')
+    ax.grid(True, alpha=0.3)
+    ax.axhline(1e-3, color='r', ls='--', lw=0.8, label='1e-3 threshold')
+    ax.legend(fontsize=8)
+
+    fig.suptitle('q->0 convergence test (single-q diagonalisation)',
+                 fontweight='bold')
+    fig.tight_layout()
+    return fig, axes
+
+
 def run(
     theta=1.05,
     nk=24,
     n_shells=4,
-    n_q=20,
-    q_max_factor=2.0,
     nb_cache=32,
     q_eps_values=None,
-    n_q_eps=8,
     omg_factor=600.0,
     domg=0.05e-3,
     eta=0.3e-3,
     kBT=0.1e-3,
     plot=True,
 ):
-    """Fully self-contained convergence test: builds model + cache + runs sweep.
+    """Self-contained convergence test — builds k-grid cache only.
+
+    For each trial q_eps, diagonalises model at k + q_eps (single q) and
+    computes chi0(omega, q_eps).  No full q-loop needed.
 
     Parameters
     ----------
-    theta : float — twist angle (degrees).
-    nk, n_shells, n_q, q_max_factor : passed to CachedModel.
-    q_eps_values : list or None — manual eps values to test.
-    n_q_eps : int — number of auto eps values.
+    theta : float
+    nk : int
+    n_shells, nb_cache : model / cache params.
+    q_eps_values : list or None
+        If None, uses dq_q * [1e-3, 1e-4, 1e-5, 1e-6].
     omg_factor, domg : frequency grid params.
     eta, kBT : physical parameters.
-    plot : bool — whether to plot the result.
+    plot : bool.
 
     Returns
     -------
-    eps_values, spectra, recommended_eps
+    eps_values, spectra, errors, recommended_eps
     """
     from ..models import BistritzMacDonaldTBG
     from .cached_model import CachedModel
     from .dos import compute_cnp
 
     model = BistritzMacDonaldTBG(theta=theta, n_shells=n_shells)
-    cache_path = f'eig-cache-theta{theta:.2f}-nk{nk}-nb{nb_cache}.npz'
-    import os
-    if os.path.exists(cache_path):
-        cache = CachedModel.load(cache_path)
-    else:
-        cache = CachedModel(model, nk=nk, n_q=n_q, q_max_factor=q_max_factor,
-                            nb_cache=nb_cache)
-        cache.save(cache_path)
+
+    # k-grid only, no q-loop
+    cache = CachedModel(model, nk=nk, nb_cache=nb_cache, n_q=0)
     w_values = default_w_values(theta, omg_factor=omg_factor, domg=domg)
     Ef = compute_cnp(cache.E_k)
+    degeneracy = model.degeneracy_factor()
+    S_norm = abs(np.linalg.det(model.reciprocal_vectors))
 
-    eps_values, spectra = run_convergence_test(
-        cache, w_values, eta=eta, Ef=Ef, kBT=kBT,
-        q_eps_values=q_eps_values, n_q_eps=n_q_eps,
-    )
-    recommended = recommend_offset(eps_values, spectra)
+    hs = model.high_symmetry_points()
+    q_dir = hs['K'] / np.linalg.norm(hs['K'])
 
-    print(f'q=0 convergence test: theta={theta}, nk={nk}')
-    dq_q = abs(cache.q_norms[0] - cache.q_norms[1]) if len(cache.q_norms) > 1 else cache.q_norms[0]
-    print(f'  q step dq_q = {abs(dq_q):.4e}, q_eps test range = [{eps_values[0]:.1e}, {eps_values[-1]:.1e}]')
-    print(f'  eps range = [{eps_values[0]:.1e}, {eps_values[-1]:.1e}]')
+    dq_q = cache.dk * (1 + 1 / np.sqrt(3)) / 3
+    if q_eps_values is None:
+        ratios = [1e-3, 1e-4, 1e-5, 1e-6]
+        q_eps_values = [dq_q * r for r in ratios]
+
+    n_eps = len(q_eps_values)
+    nw = len(w_values)
+    spectra = {
+        'intra': np.zeros((n_eps, nw), dtype=complex),
+        'inter': np.zeros((n_eps, nw), dtype=complex),
+        'total': np.zeros((n_eps, nw), dtype=complex),
+    }
+
+    print(f'q->0 convergence test: theta={theta}, nk={nk}')
+    print(f'  dq_q ~ {dq_q:.4e}')
+    print(f'  eps range = [{q_eps_values[0]:.1e}, {q_eps_values[-1]:.1e}]')
+
+    for i, eps in enumerate(q_eps_values):
+        q_vec = eps * q_dir
+        E_q, V_q = cache.eig_at_q(q_vec)
+        intra, inter, total = _chi0_single_q(
+            cache.E_k, cache.V_k, E_q, V_q,
+            w_values, Ef, kBT, eta, degeneracy, S_norm,
+        )
+        spectra['intra'][i] = intra
+        spectra['inter'][i] = inter
+        spectra['total'][i] = total
+        print(f'  eps={eps:.1e} done')
+
+    errors = convergence_metric(spectra)
+    recommended = recommend_offset(q_eps_values, spectra)
+    eps_arr = np.array(q_eps_values)
+
+    print(f'  pairwise errors: {[f"{e:.2e}" for e in errors]}')
     print(f'  recommended q_eps = {recommended:.1e}')
 
     if plot:
-        fig, _ = plot_convergence(eps_values, spectra, w_values)
+        fig, _ = plot_convergence(eps_arr, spectra, w_values, errors)
         if fig is not None:
-            fig.savefig(f'q_convergence_theta{theta:.2f}.png', dpi=150, bbox_inches='tight')
-            print(f'  plot saved: q_convergence_theta{theta:.2f}.png')
+            fname = f'q_convergence_theta{theta:.2f}.png'
+            fig.savefig(fname, dpi=150, bbox_inches='tight')
+            print(f'  plot saved: {fname}')
 
-    return eps_values, spectra, recommended
+    return eps_arr, spectra, errors, recommended
