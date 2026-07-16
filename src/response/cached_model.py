@@ -125,6 +125,24 @@ class CachedModel:
                     self.V_q[iq, ik] = Vi[:, self.bs_cache]
 
     # ── IO ────────────────────────────────────────────────
+    # -- Single-q evaluation (lightweight, no full q-loop) --
+    def eig_at_q(self, q_vec):
+        """Diagonalise model at k+q for a single q-vector.
+
+        Returns E_q (Nk, n_bands), V_q (Nk, n_orbitals, nb_cache).
+        Does NOT require a full q-loop in the cache.
+        """
+        if self.model is None:
+            raise RuntimeError("eig_at_q requires a model reference")
+        Nk = self.Nk
+        E_q = np.zeros((Nk, self.model.n_bands))
+        V_q = np.zeros((Nk, self.model.n_orbitals, self.nb_cache), dtype=complex)
+        for ik in range(Nk):
+            Ei, Vi = self.model.solve(self.k_cart[ik] + q_vec)
+            E_q[ik] = Ei
+            V_q[ik] = Vi[:, self.bs_cache]
+        return E_q, V_q
+
     def save(self, path):
         """Save cache to .npz file."""
         d = dict(nk=self.nk, Nk=self.Nk, dk=self.dk,
