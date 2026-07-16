@@ -195,7 +195,12 @@ def run(
     hs = model.high_symmetry_points()
     q_dir = hs['K'] / np.linalg.norm(hs['K'])
 
-    dq_q = cache.dk * (1 + 1 / np.sqrt(3)) / 3
+    # Actual q-spacing in scan_response: q_max / (Nq - 1)
+    # (not the local cache.dk estimate, which is ~5x smaller)
+    kf = np.linalg.norm(hs['K'])
+    q_max = 2.0 * kf
+    nq_for_step = 20  # matching scan_response default --n-q
+    dq_q = q_max / max(nq_for_step - 1, 1)
     if q_eps_values is None:
         ratios = [1e-1, 1e-2, 1e-3, 1e-4]  # dq_q/10 .. dq_q/10000
         q_eps_values = [dq_q * r for r in ratios]
