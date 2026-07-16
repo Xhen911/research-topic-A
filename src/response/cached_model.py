@@ -85,7 +85,7 @@ class CachedModel:
         self.q_norms = None
         self.Nq = 0
 
-        if n_q is not None:
+        if n_q is not None and n_q > 0:
             hs = model.high_symmetry_points()
             kf = np.linalg.norm(hs['K'])
             q_max = q_max_factor * kf
