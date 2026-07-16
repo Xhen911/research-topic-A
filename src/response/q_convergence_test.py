@@ -73,9 +73,13 @@ def _chi0_single_q(E_k, V_k, E_q, V_q, w_values, Ef, kBT, eta,
 def convergence_metric(eps_values, spectra):
     """Pairwise convergence metric, sorted ascending by eps.
 
+    Uses L2-norm of the spectral difference, normalised by
+    the geometric mean of the two spectral norms — more robust
+    against single-frequency outliers than pointwise-max ratio.
+
     Returns:
         eps_sorted (n_eps,) — ascending
-        errs (n_eps-1,) — |chi[i]-chi[i+1]|/|chi[i+1]|
+        errs (n_eps-1,) — in (0, ~1) where 0 = identical, ~1 = fully different
     """
     eps_arr = np.asarray(eps_values)
     order = np.argsort(eps_arr)
@@ -83,9 +87,11 @@ def convergence_metric(eps_values, spectra):
     chi_total = spectra['total'][order]
     errs = []
     for i in range(len(chi_total) - 1):
-        ref = np.maximum(np.abs(chi_total[i + 1]), 1e-12)
-        e = np.max(np.abs(chi_total[i] - chi_total[i + 1]) / ref)
-        errs.append(e)
+        diff = np.linalg.norm(chi_total[i] - chi_total[i + 1])
+        n1 = np.linalg.norm(chi_total[i])
+        n2 = np.linalg.norm(chi_total[i + 1])
+        denom = np.sqrt(max(n1 * n2, 1e-30))
+        errs.append(diff / denom)
     return eps_sorted, np.array(errs)
 
 
@@ -94,16 +100,23 @@ def recommend_offset(eps_values, spectra, tol=1e-3):
     """Recommend a safe q_eps from the convergence plateau.
 
     Sorts eps ascending, then scans from small to large.
-    Returns the largest eps where the spectrum is still within tol
-    of the next value (i.e., still in the plateau).
+    Returns the largest eps whose spectrum is still within ``tol``
+    of the next value, plus a diagnostic boolean ``converged``.
+
+    Returns:
+        eps : float — recommended offset
+        converged : bool — whether a plateau was found
     """
     eps_sorted, errs = convergence_metric(eps_values, spectra)
     if len(errs) == 0:
-        return eps_sorted[0]
+        return eps_sorted[0], False
     for i in range(len(errs)):
         if errs[i] > tol:
-            return eps_sorted[i]
-    return eps_sorted[-1]
+            if i == 0:
+                print(f"  WARNING: no plateau found — all errors > tol ({tol:.0e}).")
+                print(f"    Returning smallest eps tested ({eps_sorted[0]:.1e}) as fallback.")
+            return eps_sorted[i], (i > 0)
+    return eps_sorted[-1], True
 
 def plot_convergence(eps_values, spectra, w_values, errors=None,
                      figsize=(10, 8)):
@@ -185,7 +198,7 @@ def run(
 
     Returns
     -------
-    eps_values, spectra, errors, recommended_eps
+    eps_values, spectra, errors, recommended_eps, converged
     """
     from ..models import BistritzMacDonaldTBG
     from .cached_model import CachedModel
@@ -239,7 +252,9 @@ def run(
 
     eps_arr = np.array(q_eps_values)
     _, errors = convergence_metric(eps_arr, spectra)
-    recommended = recommend_offset(eps_arr, spectra)
+    recommended, converged = recommend_offset(eps_arr, spectra)
+    if not converged:
+        print(f'  WARNING: no convergence plateau detected above tol')
 
     print(f'  pairwise errors: {[f"{e:.2e}" for e in errors]}')
     print(f'  recommended q_eps = {recommended:.1e}')
@@ -251,4 +266,4 @@ def run(
             fig.savefig(fname, dpi=150, bbox_inches='tight')
             print(f'  plot saved: {fname}')
 
-    return eps_arr, spectra, errors, recommended
+    return eps_arr, spectra, errors, recommended, converged
