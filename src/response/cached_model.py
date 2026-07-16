@@ -92,6 +92,17 @@ class CachedModel:
             q_spacing = self.dk * (1 + 1/np.sqrt(3)) / 3
             self.Nq = max(2, int(round(q_max / q_spacing)))
             self.Nq = min(self.Nq, n_q)
+            dq_q = q_max / self.Nq  # q-step in the mesh
+
+            # -- q_eps sanity bounds --
+            if q_eps != 0.0:
+                assert q_eps < dq_q / 2, (
+                    f"q_eps={q_eps:.2e} >= dq_q/2={dq_q/2:.2e} "
+                    f"-- offset too large, would sample finite q")
+                _floor = 1e-9
+                assert q_eps > _floor, (
+                    f"q_eps={q_eps:.2e} <= {_floor:.1e} "
+                    f"-- fp cancellation risk in energy denominators")
 
             q_mag = np.linspace(0, 1, self.Nq) * q_max     # 0 .. q_max
             q_mag = np.maximum(q_mag, q_eps)          # shift q=0 to eps
