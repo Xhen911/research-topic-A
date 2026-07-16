@@ -34,7 +34,7 @@ def default_w_values(theta, omg_factor=600.0, domg=0.05e-3):
 
 
 def _chi0_single_q(E_k, V_k, E_q, V_q, w_values, Ef, kBT, eta,
-                    degeneracy, S_norm):
+                    degeneracy, S_norm, use_form_factor=True):
     """Lindhard chi0 for a single q point, using pre-diagonalised k and k+q.
 
     Returns intra, inter, total — each (nw,) complex128.
@@ -44,7 +44,13 @@ def _chi0_single_q(E_k, V_k, E_q, V_q, w_values, Ef, kBT, eta,
     Nk, nb = V_k.shape[0], V_k.shape[2]  # nb = nb_cache
     nw = len(w_values)
 
-    M = np.abs(np.einsum('kbm,kbn->kmn', V_q.conj(), V_k)) ** 2
+    # Form factor |<m,k+q|n,k>|^2 — optional: disabled at tiny q
+    # where BM gauge-fixing is unstable in near-degenerate flat bands.
+    if use_form_factor:
+        M = np.abs(np.einsum('kbm,kbn->kmn', V_q.conj(), V_k)) ** 2
+    else:
+        Nk, nb = V_k.shape[0], V_k.shape[2]
+        M = np.tile(np.eye(nb), (Nk, 1, 1))  # identity — gauge-free
 
     # Slice energies to the SAME band range as V_k/V_q (bs_cache)
     half = E_k.shape[1] // 2
