@@ -221,9 +221,9 @@ def run(
     cache = CachedModel(model, nk=nk, nb_cache=nb_cache, n_q=0)
     w_values = default_w_values(theta, omg_factor=omg_factor, domg=domg)
     Ef = compute_cnp(cache.E_k)
-    print(f'  Ef (CNP) = {Ef*1e3:.4f} meV,  deg={degeneracy}, S_norm={S_norm:.6f}')
     degeneracy = model.degeneracy_factor()
     S_norm = abs(np.linalg.det(model.reciprocal_vectors))
+    print(f'  Ef (CNP)={Ef*1e3:.4f} meV, deg={degeneracy}, S_norm={S_norm:.6f}')
 
     hs = model.high_symmetry_points()
     q_dir = hs['K'] / np.linalg.norm(hs['K'])
@@ -256,6 +256,7 @@ def run(
         intra, inter, total = _chi0_single_q(
             cache.E_k, cache.V_k, E_q, V_q,
             w_values, Ef, kBT, eta, degeneracy, S_norm,
+            use_form_factor=False,
         )
         spectra['intra'][i] = intra
         spectra['inter'][i] = inter
