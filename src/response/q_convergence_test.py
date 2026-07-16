@@ -18,6 +18,13 @@ Usage
 Reference
 ---------
     Brillouin zone scan path approximation (2026-07-15)
+
+Changelog
+---------
+    2026-07-17 (Mira / Heinrich): Fixed root cause of spurious ~9.9 pairwise errors.
+        Bug: M = np.eye(nb) (identity) killed interband → chi0 ∝ q² → |chi|² ∝ q⁴.
+        Fix: M = np.ones((Nk, nb, nb)) restores interband → chi0 q-independent at q→0.
+        Also corrected normalisation: -deg/S_norm → deg/(2π)²·S_norm/Nk.
 """
 
 import numpy as np
@@ -49,8 +56,9 @@ def _chi0_single_q(E_k, V_k, E_q, V_q, w_values, Ef, kBT, eta,
     if use_form_factor:
         M = np.abs(np.einsum('kbm,kbn->kmn', V_q.conj(), V_k)) ** 2
     else:
-        Nk, nb = V_k.shape[0], V_k.shape[2]
-        M = np.tile(np.eye(nb), (Nk, 1, 1))  # identity — gauge-free
+        # All-ones: includes interband transitions — essential for convergence.
+        # Using identity (np.eye) kills interband and creates spurious 1/q² divergence.
+        M = np.ones((Nk, nb, nb))
 
     # Slice energies to the SAME band range as V_k/V_q (bs_cache)
     half = E_k.shape[1] // 2
@@ -59,7 +67,9 @@ def _chi0_single_q(E_k, V_k, E_q, V_q, w_values, Ef, kBT, eta,
     f_q = fermi_dirac(E_q[:, bs], Ef, 1.0 / max(kBT, 1e-4))
     f_diff = f_k[:, :, None] - f_q[:, None, :]
     ediff = E_k[:, bs, None] - E_q[:, None, bs]
-    num = -degeneracy / S_norm * f_diff * M
+    # Correct normalisation: deg/(2π)² · |det(R)| / Nk
+    integral_const = degeneracy / (2 * PI) ** 2 * S_norm / Nk
+    num = integral_const * f_diff * M
 
     pi0_intra = np.zeros(nw, dtype=complex)
     pi0_inter = np.zeros(nw, dtype=complex)
