@@ -46,10 +46,13 @@ def _chi0_single_q(E_k, V_k, E_q, V_q, w_values, Ef, kBT, eta,
 
     M = np.abs(np.einsum('kbm,kbn->kmn', V_q.conj(), V_k)) ** 2
 
-    f_k = fermi_dirac(E_k, Ef, 1.0 / max(kBT, 1e-4))[:, :nb]
-    f_q = fermi_dirac(E_q, Ef, 1.0 / max(kBT, 1e-4))[:, :nb]
+    # Slice energies to the SAME band range as V_k/V_q (bs_cache)
+    half = E_k.shape[1] // 2
+    bs = slice(half - nb // 2, half + nb // 2)
+    f_k = fermi_dirac(E_k[:, bs], Ef, 1.0 / max(kBT, 1e-4))
+    f_q = fermi_dirac(E_q[:, bs], Ef, 1.0 / max(kBT, 1e-4))
     f_diff = f_k[:, :, None] - f_q[:, None, :]
-    ediff = E_k[:, :nb, None] - E_q[:, None, :nb]
+    ediff = E_k[:, bs, None] - E_q[:, None, bs]
     num = -degeneracy / S_norm * f_diff * M
 
     pi0_intra = np.zeros(nw, dtype=complex)
