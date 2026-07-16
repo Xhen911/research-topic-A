@@ -237,9 +237,9 @@ def run(
         spectra['total'][i] = total
         print(f'  eps={eps:.1e} done')
 
-    _, errors = convergence_metric(eps_values, spectra)
-    recommended = recommend_offset(eps_values, spectra)
     eps_arr = np.array(q_eps_values)
+    _, errors = convergence_metric(eps_arr, spectra)
+    recommended = recommend_offset(eps_arr, spectra)
 
     print(f'  pairwise errors: {[f"{e:.2e}" for e in errors]}')
     print(f'  recommended q_eps = {recommended:.1e}')
