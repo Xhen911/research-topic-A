@@ -12,8 +12,11 @@ between adjacent epsilon values.
 
 Usage
 -----
-    from src.response.q_convergence_test import run
-    eps, spectra, errors, rec = run(theta=1.05, nk=24, nb_cache=32)
+    # All-ones form factor (diagnostic — isolates non-form-factor pipeline):
+    python q_convergence_test.py --fast --no-form
+
+    # Real form factor (physics test):
+    python q_convergence_test.py --nk 24 --form
 
 Reference
 ---------
@@ -21,6 +24,11 @@ Reference
 
 Changelog
 ---------
+    2026-07-17b (Mira): Added --form/--no-form flag.  Previously hardcoded
+        use_form_factor=False.  Now default is --no-form for diagnostic
+        (isolates pipeline correctness), but --form enables real form factor
+        convergence testing.
+
     2026-07-17 (Mira / Heinrich): Fixed root cause of spurious ~9.9 pairwise errors.
         Bug: M = np.eye(nb) (identity) killed interband → chi0 ∝ q² → |chi|² ∝ q⁴.
         Fix: M = np.ones((Nk, nb, nb)) restores interband → chi0 q-independent at q→0.
@@ -200,6 +208,7 @@ def run(
     eta=0.3e-3,
     kBT=0.1e-3,
     plot=True,
+    use_form_factor=False,
 ):
     """Self-contained convergence test — builds k-grid cache only.
 
@@ -216,6 +225,10 @@ def run(
     omg_factor, domg : frequency grid params.
     eta, kBT : physical parameters.
     plot : bool.
+    use_form_factor : bool
+        Whether to use real form factor |<k+q|k>|^2.
+        False = all-ones (diagnostic, isolates non-form-factor pipeline).
+        True = real form factor (physics test).
 
     Returns
     -------
@@ -256,7 +269,9 @@ def run(
         'total': np.zeros((n_eps, nw), dtype=complex),
     }
 
+    form_label = "real form factor" if use_form_factor else "M=ones"
     print(f'q->0 convergence test: theta={theta}, nk={nk}')
+    print(f'  form factor: {form_label}')
     print(f'  dq_q ~ {dq_q:.4e}')
     print(f'  eps range = [{q_eps_values[0]:.1e}, {q_eps_values[-1]:.1e}]')
 
@@ -266,7 +281,7 @@ def run(
         intra, inter, total = _chi0_single_q(
             cache.E_k, cache.V_k, E_q, V_q,
             w_values, Ef, kBT, eta, degeneracy, S_norm,
-            use_form_factor=False,
+            use_form_factor=use_form_factor,
         )
         spectra['intra'][i] = intra
         spectra['inter'][i] = inter
@@ -285,7 +300,7 @@ def run(
     if plot:
         fig, _ = plot_convergence(eps_arr, spectra, w_values, errors)
         if fig is not None:
-            fname = f'q_convergence_theta{theta:.2f}.png'
+            fname = f'q_convergence_theta{theta:.2f}_form{"T" if use_form_factor else "F"}.png'
             fig.savefig(fname, dpi=150, bbox_inches='tight')
             print(f'  plot saved: {fname}')
 
