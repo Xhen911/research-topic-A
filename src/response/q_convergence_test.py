@@ -50,12 +50,17 @@ def run_convergence_test(cache, w_values, eta=0.3e-3,
     from .polarization import lindhard_from_cache
     from .dos import compute_cnp
 
-    step = cache.q_norms[-1]  # smallest q magnitude in the mesh
+    # dq_q = smallest q spacing in the mesh (= q_max / Nq)
+    dq_q = cache.q_norms[0] - cache.q_norms[1] if len(cache.q_norms) > 1 else cache.q_norms[0]
+    if abs(dq_q) < 1e-12:
+        dq_q = cache.q_norms[0] / 10
+    dq_q = abs(dq_q)
     if q_eps_values is None:
-        q_eps_values = [step / 10**p for p in range(4, 0, -1)] + [step * 10**p for p in range(1, 3)]
-        q_eps_values = sorted(q_eps_values)
-        # Filter: keep only values < step/2 (physical offset should be tiny)
-        q_eps_values = [v for v in q_eps_values if v < step / 2]
+        # Relative ratios q_eps / dq_q
+        ratios = [1e-3, 1e-4, 1e-5, 1e-6]
+        q_eps_values = [dq_q * r for r in ratios]
+        # Filter: keep only values < dq_q (physical offset should be within the step)
+        q_eps_values = [v for v in q_eps_values if v < dq_q / 2]
 
     if Ef is None:
         Ef = compute_cnp(cache.E_k) if hasattr(cache, 'E_k') else 0.0
@@ -202,7 +207,8 @@ def run(
     recommended = recommend_offset(eps_values, spectra)
 
     print(f'q=0 convergence test: theta={theta}, nk={nk}')
-    print(f'  q step = {cache.q_norms[-1]:.4e}')
+    dq_q = abs(cache.q_norms[0] - cache.q_norms[1]) if len(cache.q_norms) > 1 else cache.q_norms[0]
+    print(f'  q step dq_q = {abs(dq_q):.4e}, q_eps test range = [{eps_values[0]:.1e}, {eps_values[-1]:.1e}]')
     print(f'  eps range = [{eps_values[0]:.1e}, {eps_values[-1]:.1e}]')
     print(f'  recommended q_eps = {recommended:.1e}')
 
