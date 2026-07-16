@@ -73,7 +73,12 @@ def _chi0_single_q(E_k, V_k, E_q, V_q, w_values, Ef, kBT, eta,
             else:
                 pi0_inter += contrib
 
-    return pi0_intra, pi0_inter, pi0_intra + pi0_inter
+    total = pi0_intra + pi0_inter
+    # Quick sanity: check norms don't vanish
+    if np.linalg.norm(total) < 1e-30:
+        import warnings
+        warnings.warn(f"chi0_total norm is effectively zero — check Ef or band slicing")
+    return pi0_intra, pi0_inter, total
 
 
 def convergence_metric(eps_values, spectra):
@@ -216,6 +221,7 @@ def run(
     cache = CachedModel(model, nk=nk, nb_cache=nb_cache, n_q=0)
     w_values = default_w_values(theta, omg_factor=omg_factor, domg=domg)
     Ef = compute_cnp(cache.E_k)
+    print(f'  Ef (CNP) = {Ef*1e3:.4f} meV,  deg={degeneracy}, S_norm={S_norm:.6f}')
     degeneracy = model.degeneracy_factor()
     S_norm = abs(np.linalg.det(model.reciprocal_vectors))
 
