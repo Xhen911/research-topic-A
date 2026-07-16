@@ -133,7 +133,7 @@ def plot_convergence(eps_values, spectra, w_values, errors=None,
     ax = axes[1, 1]
     if errors is None:
         errors = convergence_metric(spectra)
-    ax.loglog(eps_values[1:], errors, 'ko-', lw=1.5, markersize=6)
+    ax.loglog(eps_values[1:], np.maximum(errors, 1e-16), 'ko-', lw=1.5, markersize=6)
     ax.set_xlabel('q_eps (1/A)')
     ax.set_ylabel('rel. error between adjacent eps')
     ax.set_title('Convergence metric')
@@ -170,7 +170,7 @@ def run(
     nk : int
     n_shells, nb_cache : model / cache params.
     q_eps_values : list or None
-        If None, uses dq_q * [1e-3, 1e-4, 1e-5, 1e-6].
+        If None, uses dq_q * [1e-1, 1e-2, 1e-3, 1e-4].
     omg_factor, domg : frequency grid params.
     eta, kBT : physical parameters.
     plot : bool.
@@ -197,7 +197,7 @@ def run(
 
     dq_q = cache.dk * (1 + 1 / np.sqrt(3)) / 3
     if q_eps_values is None:
-        ratios = [1e-3, 1e-4, 1e-5, 1e-6]
+        ratios = [1e-1, 1e-2, 1e-3, 1e-4]  # dq_q/10 .. dq_q/10000
         q_eps_values = [dq_q * r for r in ratios]
 
     n_eps = len(q_eps_values)
