@@ -9,23 +9,28 @@ Pipeline:
   3. Compute RPA dielectric function epsilon^-1 and loss -Im[epsilon^-1]
   4. Save results + grid-info
 
+q-mesh convention (July 2026 revision)
+--------------------------------------
+Half-step offset grid: q_j = (j + 1/2) * Δq, no strict q=0, no q_eps.
+The q_norms saved in grid-info is exactly the q used in computation — no
+hidden offset between numerical values and display.
+
 Usage
 -----
-    # Form-factor-ones (verified convergence, q_eps=3.3e-6):
-    python scripts/scan_response.py --theta 1.05 --nu 0 --nk 24 \\
-        --q-eps 3.3e-6 --no-form --save-cache
+    # Single angle, nu=-2 (partial filling → Fermi surface → plasmon):
+    python scripts/scan_response.py --theta 1.05 --nu -2 --nk 24 --save-cache
 
-    # Real form factors (physics default):
-    python scripts/scan_response.py --theta 1.05 --nu 0 --nk 24 \\
-        --q-eps 1e-4 --save-cache
-
-    # Batch multi-angle:
+    # Batch multi-angle + multi-filling:
     python scripts/scan_response.py --theta 0.80 0.99 1.05 1.08 1.16 1.47 \\
-        --nu -4 -2 0 2 4 --nk 24 --save-cache
+        --nu -2 0 2 --nk 24 --save-cache
+
+    # Form-factor-ones baseline (diagnostic):
+    python scripts/scan_response.py --theta 1.05 --nu -2 --nk 24 \\
+        --no-form --save-cache
 """
 
 import numpy as np
-import os, sys, argparse, time
+import os, sys, argparse, time, warnings
 
 if __name__ == '__main__':
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -42,25 +47,17 @@ KAPPA_ENV = 3.0
 VQ_CONST = 90.5 / KAPPA_ENV
 
 
-def assemble_response(cache, Ef, w_values, eta=ETA, form=True, q_eps=0.0):
+def assemble_response(cache, Ef, w_values, eta=ETA, form=True):
     """Compute chi0, epsilon, loss from cached eig.
 
     Parameters
     ----------
     form : bool
-        Whether to use form factor |<k+q|k>|^2.  False = all-ones
-        (verified to converge at q_eps ~ dq/1000).
-    q_eps : float
-        Passed through to lindhard_from_cache for q=0 floor.
-
-    Returns
-    -------
-    results : dict with keys 'p0', 'eps', 'loss' — each (nw, nq)
-    Vq_arr : (nq,) Coulomb potential
+        Whether to use form factor |<k+q|k>|^2.  False = all-ones.
     """
     pi0 = lindhard_from_cache(
         cache, cache.q_norms, w_values,
-        q_eps=q_eps, eta=eta, beta=1.0 / max(KBT, 1e-4), Ef=Ef,
+        eta=eta, beta=1.0 / max(KBT, 1e-4), Ef=Ef,
         form=form, use_tqdm=True,
     )
     p0 = pi0['intra'] + pi0['inter']      # (nw, nq)
@@ -108,16 +105,23 @@ def main():
     parser.add_argument('--nb-cache', type=int, default=32,
                         help='Bands to cache around CNP (default 32)')
     parser.add_argument('--save-cache', action='store_true')
-    parser.add_argument('--q-eps', type=float, default=0.0,
-                        help='q-offset to avoid q=0 singularity. '
-                             'With --no-form: 3.3e-6 (dq/1000) verified. '
-                             'With --form: 1e-4 (conservative default).')
+    parser.add_argument('--q-eps', type=float, default=None,
+                        help='DEPRECATED: half-step grid removes the need for q_eps. '
+                             'Kept for backward compat; ignored if set.')
     parser.add_argument('--form', dest='use_form', action='store_true',
                         default=True,
                         help='Use real form factor |<k+q|k>|^2 (default)')
     parser.add_argument('--no-form', dest='use_form', action='store_false',
-                        help='Use all-ones form factor (verified q-convergence)')
+                        help='Use all-ones form factor (diagnostic baseline)')
     args = parser.parse_args()
+
+    # -- deprecation warning for q_eps --
+    if args.q_eps is not None and args.q_eps != 0.0:
+        warnings.warn(
+            f"--q-eps {args.q_eps} is deprecated. "
+            f"CachedModel now uses half-step grid with no offset.",
+            DeprecationWarning, stacklevel=2,
+        )
 
     ef_scale = 1.53911e-3
     omg_rng = args.omg_factor * ef_scale
@@ -131,8 +135,8 @@ def main():
     print(f'  nu:     {args.nu}')
     print(f'  nk={args.nk}, nq={args.n_q}, nomg={nomg}')
     print(f'  form_factor: {args.use_form}')
-    print(f'  q_eps:       {args.q_eps:.1e}')
-    print(f'  save_cache:  {args.save_cache}')
+    print(f'  q_mesh: half-step grid (q_j = (j+1/2)*Δq)')
+    print(f'  save_cache: {args.save_cache}')
     print('=' * 64)
 
     for theta in args.theta:
@@ -144,12 +148,13 @@ def main():
         if os.path.exists(cache_path):
             print(f'  [cache] Loading {cache_path}')
             cache = CachedModel.load(cache_path)
+            print(f'  q_norms = [{cache.q_norms[0]:.5f}, ..., '
+                  f'{cache.q_norms[-1]:.5f}] (Nq={cache.Nq})')
         else:
             model = BistritzMacDonaldTBG(theta=theta, n_shells=args.n_shells)
             cache = CachedModel(model, nk=args.nk, n_q=args.n_q,
                                 nb_cache=args.nb_cache,
-                                q_max_factor=args.q_max_factor,
-                                q_eps=args.q_eps)
+                                q_max_factor=args.q_max_factor)
             if args.save_cache:
                 cache.save(cache_path)
 
@@ -174,8 +179,7 @@ def main():
             t0 = time.time()
             results, _ = assemble_response(cache, Ef, w_values,
                                            eta=args.eta,
-                                           form=args.use_form,
-                                           q_eps=args.q_eps)
+                                           form=args.use_form)
             save_results(results, cache, nu, w_values,
                          form=args.use_form, outdir=args.cache_dir)
             print(f'  time: {time.time()-t0:.1f}s')
