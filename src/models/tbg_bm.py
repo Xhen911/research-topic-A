@@ -27,7 +27,8 @@ from .base import HamiltonianModel
 # ── 物理常量 ────────────────────────────────────────────────
 _A_G = 2.46                     # Å，石墨烯晶格常数
 _G_NORM = 2 * np.pi / (np.cos(np.radians(30)) * _A_G)  # 1/Å, |G|
-_VF_DEFAULT = np.sqrt(3) / 2 * 2.78 * _A_G             # ~5.92 eV·Å
+_VF_DEFAULT = 5.2398  # common practice in MATBG, ℏvF = −2.13a
+# np.sqrt(3) / 2 * 2.78 * _A_G             # ~5.92 eV·Å
 
 # Moiré 跃迁相位因子  ω = exp(i·2π/3)
 _OMEGA = np.exp(1j * 2 * np.pi / 3)
