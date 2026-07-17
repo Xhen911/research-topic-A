@@ -1,4 +1,3 @@
-
 """
 cached_model.py — Eigenvalue cache wrapper for HamiltonianModel
 ================================================================
@@ -7,6 +6,16 @@ Diagonalize once, evaluate many times.  Wraps any HamiltonianModel
 and caches the full k-grid (and optionally q-loop) diagonalisation
 results.  Ideal for θ/ν batch scans where the Hamiltonian is
 θ-dependent but ν-independent.
+
+q-mesh convention (July 2026 revision)
+--------------------------------------
+Uses a half-step offset grid:
+    q_j = (j + 1/2) * Δq,  j = 0, ..., Nq-1
+    Δq = q_max / Nq
+
+No strict q=0 point, no artificial q_eps offset.  The q values used in
+computation are identical to the q values stored in ``q_norms`` and
+displayed on plots — no hidden shift.
 
 Usage
 -----
@@ -29,8 +38,9 @@ Usage
 """
 
 import numpy as np
-import os
+import os, warnings
 from .polarization import generate_k_mesh
+
 
 class CachedModel:
     """Pre-diagonalised eigenvalue cache for any HamiltonianModel.
@@ -53,7 +63,7 @@ class CachedModel:
     """
 
     def __init__(self, model, nk=24, nb_cache=None,
-                 n_q=None, q_max_factor=2.0, q_eps=1e-6,
+                 n_q=None, q_max_factor=2.0, q_eps=None,
                  n_workers=None, verbose=True):
         self.model = model
         self.theta = getattr(model, 'theta', None)
@@ -70,8 +80,8 @@ class CachedModel:
 
         self.E_k = np.zeros((self.Nk, model.n_bands))
         self.V_k = np.zeros((self.Nk, model.n_orbitals, self.nb_cache), dtype=complex)
-        self.bs_cache = slice(model.n_bands//2 - self.nb_cache//2,
-                                  model.n_bands//2 + self.nb_cache//2)
+        self.bs_cache = slice(model.n_bands // 2 - self.nb_cache // 2,
+                              model.n_bands // 2 + self.nb_cache // 2)
 
         for i in range(self.Nk):
             Ei, Vi = model.solve(self.k_cart[i])
@@ -86,26 +96,26 @@ class CachedModel:
         self.Nq = 0
 
         if n_q is not None and n_q > 0:
+            # -- q_eps is deprecated; warn if explicitly set --
+            if q_eps is not None and q_eps != 0.0:
+                warnings.warn(
+                    f"CachedModel: q_eps={q_eps:.2e} is deprecated. "
+                    f"Now uses half-step grid q_j = (j+1/2)*Δq with no offset.",
+                    DeprecationWarning, stacklevel=2,
+                )
+
             hs = model.high_symmetry_points()
             kf = np.linalg.norm(hs['K'])
             q_max = q_max_factor * kf
-            q_spacing = self.dk * (1 + 1/np.sqrt(3)) / 3
+            q_spacing = self.dk * (1 + 1 / np.sqrt(3)) / 3
             self.Nq = max(2, int(round(q_max / q_spacing)))
             self.Nq = min(self.Nq, n_q)
-            dq_q = q_max / self.Nq  # q-step in the mesh
 
-            # -- q_eps sanity bounds --
-            if q_eps != 0.0:
-                assert q_eps < dq_q / 2, (
-                    f"q_eps={q_eps:.2e} >= dq_q/2={dq_q/2:.2e} "
-                    f"-- offset too large, would sample finite q")
-                _floor = 1e-9
-                assert q_eps > _floor, (
-                    f"q_eps={q_eps:.2e} <= {_floor:.1e} "
-                    f"-- fp cancellation risk in energy denominators")
-
-            q_mag = np.linspace(0, 1, self.Nq) * q_max     # 0 .. q_max
-            q_mag = np.maximum(q_mag, q_eps)          # shift q=0 to eps
+            # ── Half-step offset grid ──
+            # q_j = (j + 1/2) * Δq,  j = 0, ..., Nq-1
+            # No strict q=0, no artificial offset.
+            dq_q = q_max / self.Nq
+            q_mag = (np.arange(self.Nq) + 0.5) * dq_q
             q_dir = hs['K'] / kf
             self.q_cart = np.array([qi * q_dir for qi in q_mag])
             self.q_norms = np.linalg.norm(self.q_cart, axis=1)
@@ -115,7 +125,8 @@ class CachedModel:
                                 dtype=complex)
 
             if verbose:
-                print(f'  q-loop: Nq={self.Nq}, q_max={q_max:.4f} 1/A')
+                print(f'  q-loop: Nq={self.Nq}, dq={dq_q:.4f} 1/A, '
+                      f'q_range=[{self.q_norms[0]:.4f}, {self.q_norms[-1]:.4f}]')
 
             for iq in range(self.Nq):
                 kq = self.k_cart + self.q_cart[iq]
@@ -125,7 +136,6 @@ class CachedModel:
                     self.V_q[iq, ik] = Vi[:, self.bs_cache]
 
     # ── IO ────────────────────────────────────────────────
-    # -- Single-q evaluation (lightweight, no full q-loop) --
     def eig_at_q(self, q_vec):
         """Diagonalise model at k+q for a single q-vector.
 
@@ -175,13 +185,14 @@ class CachedModel:
         cache.q_cart = data.get('q_cart')
         cache.q_norms = data.get('q_norms')
         cache.Nq = int(data.get('Nq', 0))
+        # Reconstruct bs_cache (not serialised in npz)
         half = cache.E_k.shape[1] // 2
         cache.bs_cache = slice(half - cache.nb_cache // 2,
-                               half + cache.nb_cache // 2)
+                                half + cache.nb_cache // 2)
         return cache
 
     # ── Convenience ───────────────────────────────────────
     def get_flat_bands(self):
         """Return E_k sliced to flat pair [half-1, half]."""
         half = self.E_k.shape[1] // 2
-        return self.E_k[:, half-1: half+1]
+        return self.E_k[:, half - 1: half + 1]
