@@ -73,13 +73,14 @@ def assemble_response(cache, Ef, w_values, eta=ETA, form=True, q_eps=0.0):
     return {'p0': p0, 'eps': eps, 'loss': loss}, Vq_arr
 
 
-def save_results(results, cache, nu, w_values, outdir='.'):
+def save_results(results, cache, nu, w_values, form=True, outdir='.'):
     """Save p0, eps, loss, grid-info."""
     theta = cache.theta or 0
     ttag = f'theta{theta:.2f}'.replace('.', 'p')
     nu_tag = f'nu{"p" if nu>0 else "n"}{abs(int(nu)):02d}' if nu != 0 else 'nu0'
+    ff = 'ff' if form else 'noff'
 
-    tag = f'{ttag}-{nu_tag}'
+    tag = f'{ttag}-{nu_tag}-{ff}'
     np.save(os.path.join(outdir, f'p0-{tag}.npy'), results['p0'])
     np.save(os.path.join(outdir, f'eps-{tag}.npy'), results['eps'])
     np.save(os.path.join(outdir, f'loss-{tag}.npy'), results['loss'])
@@ -88,7 +89,7 @@ def save_results(results, cache, nu, w_values, outdir='.'):
              Nq=cache.Nq, nk=cache.nk, Nk=cache.Nk,
              nb_cache=cache.nb_cache, theta_deg=theta, nu=nu,
              eta=ETA, kBT=KBT, kappa_env=KAPPA_ENV,
-             use_form=results.get('use_form', True))
+             use_form=form)
     print(f'    Saved: p0/eps/loss/grid-info-{tag}.*')
 
 
@@ -175,8 +176,8 @@ def main():
                                            eta=args.eta,
                                            form=args.use_form,
                                            q_eps=args.q_eps)
-            results['use_form'] = args.use_form
-            save_results(results, cache, nu, w_values, outdir=args.cache_dir)
+            save_results(results, cache, nu, w_values,
+                         form=args.use_form, outdir=args.cache_dir)
             print(f'  time: {time.time()-t0:.1f}s')
 
     print('\n' + '=' * 64)
