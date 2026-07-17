@@ -175,6 +175,9 @@ class CachedModel:
         cache.q_cart = data.get('q_cart')
         cache.q_norms = data.get('q_norms')
         cache.Nq = int(data.get('Nq', 0))
+        half = cache.E_k.shape[1] // 2
+        cache.bs_cache = slice(half - cache.nb_cache // 2,
+                               half + cache.nb_cache // 2)
         return cache
 
     # ── Convenience ───────────────────────────────────────
