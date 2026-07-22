@@ -28,14 +28,14 @@ import os, sys, argparse, time
 if __name__ == '__main__':
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from src.models import BistritzMacDonaldTBG
+from src.bands import BistritzMacDonaldTBG
 from src.response.cached_model import CachedModel
 from src.response.dos import (
     compute_dos, compute_dos_triangle,
     find_vhs_peaks, find_vhs_derivative,
-    compute_filling, compute_cnp,
     check_dos_sum_rule,
 )
+from src.bands.occupations import compute_filling, compute_cnp
 
 
 def analyze_theta(theta, nk=24, n_shells=4, method='triangle',

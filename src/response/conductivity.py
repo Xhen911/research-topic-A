@@ -48,9 +48,9 @@ import numpy as np
 from typing import Dict, Optional
 
 try:
-    from ..models.base import HamiltonianModel
+    from ..bands.base import HamiltonianModel
 except ImportError:
-    from models.base import HamiltonianModel
+    from bands.base import HamiltonianModel
 
 try:
     from .polarization import generate_k_mesh, fermi_dirac
@@ -353,7 +353,7 @@ def optical_conductivity(
 
     Examples
     --------
-    >>> from src.models.graphene import SingleLayerGrapheneKP
+    >>> from src.bands.graphene import SingleLayerGrapheneKP
     >>> from src.response.conductivity import optical_conductivity
     >>> model = SingleLayerGrapheneKP()
     >>> omega = np.linspace(0.01, 0.3, 200)

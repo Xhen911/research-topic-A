@@ -35,10 +35,10 @@ import os, sys, argparse, time, warnings
 if __name__ == '__main__':
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from src.models import BistritzMacDonaldTBG
+from src.bands import BistritzMacDonaldTBG
 from src.response.cached_model import CachedModel
 from src.response.polarization import lindhard_from_cache
-from src.response.dos import compute_cnp, compute_filling
+from src.bands.occupations import compute_cnp, compute_filling
 
 DEGENERACY = 4
 KBT = 0.1e-3
