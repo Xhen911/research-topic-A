@@ -1,20 +1,20 @@
 """
-polarization.py
-===============
-Lindhard polarization function for TB/KP models, plus spectral-weight-transfer analysis.
+lindhard.py
+===========
+Lindhard polarization function for TB/KP models.
 
 Core function
 -------------
-- lindhard_polarization(model, q_values, w_values, ...) → dict
-  Returns decoupled intra- and inter-band Π₀(q, ω).
+- lindhard_polarization(model, q_values, w_values, ...) -> dict
+  Returns decoupled intra- and inter-band Pi_0(q, w).
 
 Utilities
 ---------
 - fermi_dirac(E, Ef, beta)          — numerically stable Fermi-Dirac
 - generate_k_mesh(nk, reciprocal_vectors) — BZ parallelogram grid
 - wrap_k_plus_q(k_frac, q_cart, reciprocal_vectors, lattice_vectors, wrap=True)
-- compute_swt_1d(q_val, w_values, pi0_dict, q_values, Ef, vf=1.0)
-- compute_swt_2d(q_values, w_values, pi0_dict, Ef, vf=1.0)
+
+Note: compute_swt_1d/2d moved to observables/spectral_weight.py (PR-4).
 
 Author: Refactored from Sabio(2008) graphene_polarization_swt_tb_v2.py
 Date:   2026-05-30
@@ -234,116 +234,6 @@ def lindhard_polarization(
                     pi0_inter[:, iq] += contribution
 
     return {'intra': pi0_intra, 'inter': pi0_inter}
-
-
-# ============================================================
-#  谱权重转移 (Spectral Weight Transfer, SWT)
-# ============================================================
-
-def compute_swt_1d(
-    q_val: float,
-    w_values: np.ndarray,
-    pi0_dict: dict,
-    q_values: np.ndarray,
-    Ef: float,
-    vf: float = 1.0,
-):
-    """对选定的 q 值求带内和带间谱权重的单维积分。
-
-    使用辛普森积分沿 ω 轴计算 -Im[Π₀] 的分段权重。
-
-    Parameters
-    ----------
-    q_val : float
-        目标 q 值。
-    w_values : np.ndarray, shape (nw,)
-        频率网格。
-    pi0_dict : dict
-        lindhard_polarization 返回的字典 {'intra': ..., 'inter': ...}。
-    q_values : np.ndarray, shape (nq,)
-        q 值网格。
-    Ef : float
-        费米能量。
-    vf : float
-        费米速度（用于划定区域边界）。
-
-    Returns
-    -------
-    weight_intra : float
-        带内谱权重积分。
-    weight_inter : float
-        带间谱权重积分。
-    total_weight : float
-        全谱总权重积分。
-    """
-    from scipy.integrate import simpson
-
-    iq = np.argmin(np.abs(q_values - q_val))
-    actual_q = q_values[iq]
-
-    spec_intra = -pi0_dict['intra'][:, iq].imag
-    spec_inter = -pi0_dict['inter'][:, iq].imag
-
-    omega_intra_max = vf * actual_q
-    omega_inter_min = max(2.0 * Ef - vf * actual_q, vf * actual_q)
-
-    mask_intra = w_values <= omega_intra_max
-    mask_inter = w_values >= omega_inter_min
-
-    weight_intra = simpson(spec_intra[mask_intra], w_values[mask_intra])
-    weight_inter = simpson(spec_inter[mask_inter], w_values[mask_inter])
-    total_weight = simpson(spec_intra + spec_inter, w_values)
-
-    return weight_intra, weight_inter, total_weight
-
-
-def compute_swt_2d(
-    q_values: np.ndarray,
-    w_values: np.ndarray,
-    pi0_dict: dict,
-    Ef: float,
-    vf: float = 1.0,
-):
-    """二维全空间宏观区域谱权重积分。
-
-    在 (q, ω) 平面上划分带内/带间区域并分别积分谱权重。
-
-    Parameters
-    ----------
-    q_values : np.ndarray, shape (nq,)
-    w_values : np.ndarray, shape (nw,)
-    pi0_dict : dict
-        lindhard_polarization 返回的字典。
-    Ef : float
-        费米能量。
-    vf : float
-        费米速度。
-
-    Returns
-    -------
-    total_intra_weight : float
-    total_inter_weight : float
-    """
-    Q, W = np.meshgrid(q_values, w_values)
-
-    full_intra = -pi0_dict['intra'].imag
-    full_inter = -pi0_dict['inter'].imag
-
-    intra_mask = W <= vf * Q
-    inter_mask = (W >= 2 * Ef - vf * Q) & (W >= vf * Q)
-
-    dq = q_values[1] - q_values[0]
-    dw = w_values[1] - w_values[0]
-    da = dq * dw
-
-    total_intra_weight = np.sum(full_intra[intra_mask]) * da
-    total_inter_weight = np.sum(full_inter[inter_mask]) * da
-
-    print("\n=== 2D macroscopic region integration ===")
-    print(f"[*] Intra-band total spectral weight: {total_intra_weight:.4f}")
-    print(f"[*] Inter-band total spectral weight: {total_inter_weight:.4f}")
-
-    return total_intra_weight, total_inter_weight
 
 
 # ============================================================
