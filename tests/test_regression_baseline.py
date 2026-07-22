@@ -26,12 +26,8 @@ import pytest
 from src.bands.graphene import SingleLayerGrapheneTB
 from src.bands.tbg_bm import BistritzMacDonaldTBG
 from src.propagators.kubo import optical_conductivity_xx
-from src.response.dielectric import (
-    coulomb_2d,
-    dielectric_function,
-    energy_loss_function,
-    rpa_response,
-)
+from src.interactions.rpa import coulomb_2d, rpa_response
+from src.observables.dielectric import dielectric_function, energy_loss_function
 from src.propagators.dos import (
     check_dos_sum_rule,
     compute_dos_triangle,

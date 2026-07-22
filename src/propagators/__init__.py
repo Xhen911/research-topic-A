@@ -6,8 +6,6 @@ from .lindhard import (
     wrap_k_plus_q,
     lindhard_polarization,
     lindhard_from_cache,
-    compute_swt_1d,
-    compute_swt_2d,
 )
 from .dos import (
     compute_dos,
@@ -41,8 +39,6 @@ __all__ = [
     'wrap_k_plus_q',
     'lindhard_polarization',
     'lindhard_from_cache',
-    'compute_swt_1d',
-    'compute_swt_2d',
     # dos
     'compute_dos',
     'compute_dos_vectorized',
