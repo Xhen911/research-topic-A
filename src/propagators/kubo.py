@@ -53,9 +53,9 @@ except ImportError:
     from bands.base import HamiltonianModel
 
 try:
-    from .polarization import generate_k_mesh, fermi_dirac
+    from .lindhard import generate_k_mesh, fermi_dirac
 except ImportError:
-    from polarization import generate_k_mesh, fermi_dirac
+    from lindhard import generate_k_mesh, fermi_dirac
 
 try:
     from .dos import compute_eigenvalues
@@ -354,7 +354,7 @@ def optical_conductivity(
     Examples
     --------
     >>> from src.bands.graphene import SingleLayerGrapheneKP
-    >>> from src.response.conductivity import optical_conductivity
+    >>> from src.propagators.kubo import optical_conductivity
     >>> model = SingleLayerGrapheneKP()
     >>> omega = np.linspace(0.01, 0.3, 200)
     >>> sigma = optical_conductivity(model, omega, nk=60)

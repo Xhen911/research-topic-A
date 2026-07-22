@@ -36,8 +36,8 @@ if __name__ == '__main__':
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from src.bands import BistritzMacDonaldTBG
-from src.response.cached_model import CachedModel
-from src.response.polarization import lindhard_from_cache
+from src.core.cache import CachedModel
+from src.propagators.lindhard import lindhard_from_cache
 from src.bands.occupations import compute_cnp, compute_filling
 
 DEGENERACY = 4

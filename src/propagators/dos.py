@@ -31,7 +31,7 @@ k 积分模块：态密度 (Density of States) & 通用 BZ 积分。
 import numpy as np
 from typing import Callable, Optional, Tuple
 
-from .polarization import generate_k_mesh, fermi_dirac
+from .lindhard import generate_k_mesh, fermi_dirac
 
 
 # ============================================================

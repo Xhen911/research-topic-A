@@ -18,7 +18,7 @@ Usage
 
 Dependencies
 ------------
-    src.models, src.response.dos, src.response.cached_model
+    src.bands, src.propagators.dos, src.core.cache
 """
 
 import numpy as np
@@ -29,8 +29,8 @@ if __name__ == '__main__':
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from src.bands import BistritzMacDonaldTBG
-from src.response.cached_model import CachedModel
-from src.response.dos import (
+from src.core.cache import CachedModel
+from src.propagators.dos import (
     compute_dos, compute_dos_triangle,
     find_vhs_peaks, find_vhs_derivative,
     check_dos_sum_rule,

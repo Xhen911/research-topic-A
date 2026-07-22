@@ -20,7 +20,7 @@ displayed on plots — no hidden shift.
 Usage
 -----
     from src.bands import BistritzMacDonaldTBG
-    from src.response.cached_model import CachedModel
+    from src.core.cache import CachedModel
 
     model = BistritzMacDonaldTBG(theta=1.05, n_shells=4)
     cache = CachedModel(model, nk=24)
@@ -39,7 +39,7 @@ Usage
 
 import numpy as np
 import os, warnings
-from .polarization import generate_k_mesh
+from ..propagators.lindhard import generate_k_mesh
 
 
 class CachedModel:
