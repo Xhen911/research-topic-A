@@ -19,7 +19,7 @@ displayed on plots — no hidden shift.
 
 Usage
 -----
-    from src.models import BistritzMacDonaldTBG
+    from src.bands import BistritzMacDonaldTBG
     from src.response.cached_model import CachedModel
 
     model = BistritzMacDonaldTBG(theta=1.05, n_shells=4)

@@ -14,8 +14,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import numpy as np
-from models.base import HamiltonianModel
-from models.graphene import (
+from bands.base import HamiltonianModel
+from bands.graphene import (
     SingleLayerGrapheneTB,
     BilayerGrapheneTB,
     SingleLayerGrapheneKP,

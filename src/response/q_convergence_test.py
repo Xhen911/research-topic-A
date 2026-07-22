@@ -234,9 +234,9 @@ def run(
     -------
     eps_values, spectra, errors, recommended_eps, converged
     """
-    from ..models import BistritzMacDonaldTBG
+    from ..bands import BistritzMacDonaldTBG
     from .cached_model import CachedModel
-    from .dos import compute_cnp
+    from ..bands.occupations import compute_cnp
 
     model = BistritzMacDonaldTBG(theta=theta, n_shells=n_shells)
 

@@ -23,8 +23,8 @@ import os
 import numpy as np
 import pytest
 
-from src.models.graphene import SingleLayerGrapheneTB
-from src.models.tbg_bm import BistritzMacDonaldTBG
+from src.bands.graphene import SingleLayerGrapheneTB
+from src.bands.tbg_bm import BistritzMacDonaldTBG
 from src.response.conductivity import optical_conductivity_xx
 from src.response.dielectric import (
     coulomb_2d,
@@ -34,11 +34,10 @@ from src.response.dielectric import (
 )
 from src.response.dos import (
     check_dos_sum_rule,
-    compute_cnp,
     compute_dos_triangle,
     compute_eigenvalues,
-    compute_filling,
 )
+from src.bands.occupations import compute_cnp, compute_filling
 from src.response.polarization import generate_k_mesh, lindhard_polarization
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')

@@ -210,7 +210,8 @@ def lindhard_polarization(
         # V_q.conj() shape: (Nk, n_orbitals, nb)
         # V_k       shape: (Nk, n_orbitals, nb)
         # einsum 'kbm,kbn->kmn'  → (Nk, nb, nb)
-        M = np.abs(np.einsum('kbm,kbn->kmn', V_q.conj(), V_k)) ** 2
+        from ..bands.vertices import density_form_factor
+        M = density_form_factor(V_k, V_q)
 
         for m in range(nb):      # 末态能带 (k+q)
             for n in range(nb):  # 初态能带 (k)
@@ -417,7 +418,8 @@ def lindhard_from_cache(
 
         # Form factor |⟨m,k+q|n,k⟩|²
         if form and cache.V_k is not None:
-            M = np.abs(np.einsum('kbm,kbn->kmn', V_q.conj(), cache.V_k)) ** 2
+            from ..bands.vertices import density_form_factor
+            M = density_form_factor(cache.V_k, V_q)
         else:
             M = np.ones((Nk, nb, nb))
 

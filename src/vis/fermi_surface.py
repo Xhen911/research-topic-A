@@ -89,7 +89,8 @@ def plot_fermi_surface_vhs(
     # ── 2. VHS energy ──────────────────────────────────────
     if E_vhs is None:
         try:
-            from .dos import compute_dos_triangle, find_vhs_peaks, compute_cnp
+            from ..response.dos import compute_dos_triangle, find_vhs_peaks
+            from ..bands.occupations import compute_cnp
             kBT = 0.1e-3
             E_dos, dos = compute_dos_triangle(model, nk=nk_side,
                                               band_slice=slice(band_idx, band_idx+1))
@@ -104,7 +105,7 @@ def plot_fermi_surface_vhs(
             E_cnp = (E_band.min() + E_band.max()) / 2
             E_vhs = E_band.max() if vhs_side == 'electron' else E_band.min()
     else:
-        from .dos import compute_cnp
+        from ..bands.occupations import compute_cnp
         E_cnp = compute_cnp(E_k)
     
     # ── 3. Contour range ───────────────────────────────────
@@ -152,7 +153,7 @@ def plot_fermi_surface_vhs(
     
     # Title
     # Compute ν at VHS
-    from .dos import compute_filling
+    from ..bands.occupations import compute_filling
     nu_vhs = compute_filling(E_k, E_vhs, model=model)
     
     theta_str = getattr(model, 'theta', 0)

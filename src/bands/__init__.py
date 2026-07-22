@@ -7,7 +7,10 @@ from .graphene import (
     BilayerGrapheneKPAA,
 )
 from .tbg_bm import BistritzMacDonaldTBG
-# from .tbg_tb import TBGTightBinding
+from .tbg_relaxed import TBGRelaxation
+from .occupations import compute_cnp, compute_filling
+from .vertices import density_form_factor
+from .symmetry import fix_gauge
 
 __all__ = [
     'HamiltonianModel',
@@ -17,5 +20,9 @@ __all__ = [
     'BilayerGrapheneKP',
     'BilayerGrapheneKPAA',
     'BistritzMacDonaldTBG',
-    # 'TBGTightBinding',
+    'TBGRelaxation',
+    'compute_cnp',
+    'compute_filling',
+    'density_form_factor',
+    'fix_gauge',
 ]
