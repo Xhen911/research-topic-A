@@ -1,10 +1,12 @@
 """
 Model verification and debugging utilities.
 
+Moved from debug/model_checks.py to validation/ in PR-5 (L5 layer).
+
 Usage:
-    python src/debug/model_checks.py
+    python src/validation/model_checks.py
     # or from parent of src/:
-    python -m debug.model_checks
+    python -m validation.model_checks
 """
 
 import sys

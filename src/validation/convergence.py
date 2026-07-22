@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
-"""q_convergence_test.py — q->0 convergence test via single-q diagonalisation.
+"""convergence.py — q->0 convergence test via single-q diagonalisation.
 =================================================================================
+
+Moved from response/q_convergence_test.py to validation/ in PR-5 (L5 layer).
 
 Instead of building a full q-loop CachedModel, only diagonalises at
 k + q_eps for each trial offset, then computes chi(q_eps, omega)
@@ -13,10 +15,10 @@ between adjacent epsilon values.
 Usage
 -----
     # All-ones form factor (diagnostic — isolates non-form-factor pipeline):
-    python q_convergence_test.py --fast --no-form
+    python -m validation.convergence --fast --no-form
 
     # Real form factor (physics test):
-    python q_convergence_test.py --nk 24 --form
+    python -m validation.convergence --nk 24 --form
 
 Reference
 ---------
@@ -24,6 +26,12 @@ Reference
 
 Changelog
 ---------
+    2026-07-22 (Mira): Moved response/q_convergence_test.py ->
+        validation/convergence.py (PR-5).  Also fixed the stale relative
+        import `from .polarization import fermi_dirac` left over from the
+        PR-3 rename (polarization.py -> propagators/lindhard.py); the old
+        import was broken on main.
+
     2026-07-17b (Mira): Added --form/--no-form flag.  Previously hardcoded
         use_form_factor=False.  Now default is --no-form for diagnostic
         (isolates pipeline correctness), but --form enables real form factor
@@ -55,7 +63,7 @@ def _chi0_single_q(E_k, V_k, E_q, V_q, w_values, Ef, kBT, eta,
     Returns intra, inter, total — each (nw,) complex128.
     Uses nb_cache bands for form-factor consistency.
     """
-    from .polarization import fermi_dirac
+    from ..propagators.lindhard import fermi_dirac
     Nk, nb = V_k.shape[0], V_k.shape[2]  # nb = nb_cache
     nw = len(w_values)
 
