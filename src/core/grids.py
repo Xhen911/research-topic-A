@@ -1,4 +1,8 @@
-"""k-path utilities for band structure calculations."""
+"""Grid and k-path utilities for band structure calculations.
+
+Moved from utils/kpath.py to core/grids.py in PR-6 (layered architecture
+cleanup).  `utils/` is now empty and removed.
+"""
 import numpy as np
 
 
