@@ -25,20 +25,20 @@ import pytest
 
 from src.bands.graphene import SingleLayerGrapheneTB
 from src.bands.tbg_bm import BistritzMacDonaldTBG
-from src.response.conductivity import optical_conductivity_xx
+from src.propagators.kubo import optical_conductivity_xx
 from src.response.dielectric import (
     coulomb_2d,
     dielectric_function,
     energy_loss_function,
     rpa_response,
 )
-from src.response.dos import (
+from src.propagators.dos import (
     check_dos_sum_rule,
     compute_dos_triangle,
     compute_eigenvalues,
 )
 from src.bands.occupations import compute_cnp, compute_filling
-from src.response.polarization import generate_k_mesh, lindhard_polarization
+from src.propagators.lindhard import generate_k_mesh, lindhard_polarization
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
 
@@ -140,7 +140,7 @@ def test_halfstep_grid_cached_model():
     q_j = (j+1)*dq 旧约定，不能用同一断言扫描——故此处直接
     对 CachedModel 建最小实例验证代码行为。
     """
-    from src.response.cached_model import CachedModel
+    from src.core.cache import CachedModel
     model = BistritzMacDonaldTBG(theta=1.05, n_shells=3)
     cache = CachedModel(model, nk=4, nb_cache=8, n_q=3, verbose=False)
     q = np.linalg.norm(cache.q_cart, axis=1)

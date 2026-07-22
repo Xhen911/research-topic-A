@@ -19,7 +19,7 @@ Author: ported from viz_fermi_surface_vhs.py, 2026-07-15
 """
 
 import numpy as np
-from ..response.polarization import generate_k_mesh, fermi_dirac
+from ..propagators.lindhard import generate_k_mesh, fermi_dirac
 
 
 def plot_fermi_surface_vhs(
@@ -69,7 +69,7 @@ def plot_fermi_surface_vhs(
     if k_cart is None:
         _, k_cart = generate_k_mesh(nk, model.reciprocal_vectors)
     if E_k is None:
-        from ..response.dos import compute_eigenvalues
+        from ..propagators.dos import compute_eigenvalues
         E_k, _ = compute_eigenvalues(model, k_cart)
     
     nk_side = int(np.sqrt(len(k_cart)))
@@ -89,7 +89,7 @@ def plot_fermi_surface_vhs(
     # ── 2. VHS energy ──────────────────────────────────────
     if E_vhs is None:
         try:
-            from ..response.dos import compute_dos_triangle, find_vhs_peaks
+            from ..propagators.dos import compute_dos_triangle, find_vhs_peaks
             from ..bands.occupations import compute_cnp
             kBT = 0.1e-3
             E_dos, dos = compute_dos_triangle(model, nk=nk_side,
