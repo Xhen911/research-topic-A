@@ -73,9 +73,6 @@ Multiply externally to convert to physical units:
     σ_S = σ × e²/ħ  ≈  σ × 3.874×10⁻⁵  S  (2D sheet)
 """
 
-_DK_DEFAULT: float = 1e-4
-"""Default finite-difference step for the velocity operator (1/Å)."""
-
 
 # ────────────────────────────────────────────────────────────
 #  Fermi-Dirac derivative  −∂f/∂E
@@ -104,7 +101,6 @@ def _fermi_derivative(E: np.ndarray, Ef: float, beta: float) -> np.ndarray:
 def velocity_matrix_elements(
     model: HamiltonianModel,
     k_points: np.ndarray,
-    dk: float = _DK_DEFAULT,
 ) -> np.ndarray:
     """速度矩阵元 v^α_{mn}(k)（本征基），使用模型的解析速度算符。
 
@@ -117,8 +113,6 @@ def velocity_matrix_elements(
     ----------
     model : HamiltonianModel
     k_points : np.ndarray, shape (nk, 2)
-    dk : float
-        保留用于向后兼容，实际不使用（解析速度算符）。
 
     Returns
     -------
@@ -302,7 +296,6 @@ def optical_conductivity(
     Ef: float = 0.0,
     T: float = 0.0,
     eta: float = 0.003,
-    dk: float = _DK_DEFAULT,
 ) -> Dict[str, np.ndarray]:
     """Full optical conductivity tensor from the Kubo formula.
 
@@ -326,9 +319,6 @@ def optical_conductivity(
         temperature (1e-4 eV) for numerical stability.
     eta : float
         Broadening η (eV).  Controls peak / shoulder widths.
-    dk : float
-        Finite-difference step for the velocity operator (1/Å).
-        Default 1e-4.
 
     Returns
     -------
@@ -407,7 +397,6 @@ def optical_conductivity_xx(
     Ef: float = 0.0,
     T: float = 0.0,
     eta: float = 0.003,
-    dk: float = _DK_DEFAULT,
 ) -> Dict[str, np.ndarray]:
     """Convenience wrapper returning only the xx (longitudinal) component.
 
@@ -417,7 +406,7 @@ def optical_conductivity_xx(
     Each value except ``'omega'`` is a 1D ``(nω,)`` real array.
     """
     full = optical_conductivity(
-        model, omega, nk=nk, Ef=Ef, T=T, eta=eta, dk=dk,
+        model, omega, nk=nk, Ef=Ef, T=T, eta=eta,
     )
     return {
         'inter': full['inter'][:, 0, 0].real,

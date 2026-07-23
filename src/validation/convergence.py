@@ -64,6 +64,7 @@ def _chi0_single_q(E_k, V_k, E_q, V_q, w_values, Ef, kBT, eta,
     Uses nb_cache bands for form-factor consistency.
     """
     from ..propagators.lindhard import fermi_dirac
+    from ..propagators.transitions import make_bs_cache
     Nk, nb = V_k.shape[0], V_k.shape[2]  # nb = nb_cache
     nw = len(w_values)
 
@@ -76,9 +77,9 @@ def _chi0_single_q(E_k, V_k, E_q, V_q, w_values, Ef, kBT, eta,
         # Using identity (np.eye) kills interband and creates spurious 1/q² divergence.
         M = np.ones((Nk, nb, nb))
 
-    # Slice energies to the SAME band range as V_k/V_q (bs_cache)
-    half = E_k.shape[1] // 2
-    bs = slice(half - nb // 2, half + nb // 2)
+    # Slice energies to the SAME band range as V_k/V_q (bs_cache).
+    # Use the canonical band-pair helper (also used by CachedModel.load).
+    bs = make_bs_cache(E_k.shape[1], nb)
     f_k = fermi_dirac(E_k[:, bs], Ef, 1.0 / max(kBT, 1e-4))
     f_q = fermi_dirac(E_q[:, bs], Ef, 1.0 / max(kBT, 1e-4))
     f_diff = f_k[:, :, None] - f_q[:, None, :]
@@ -189,9 +190,15 @@ def plot_convergence(eps_values, spectra, w_values, errors=None,
     ax.set_title('Im[chi_total]')
 
     ax = axes[1, 1]
+    # NOTE: convergence_metric internally SORTS eps ascending and returns
+    # errors aligned with that sorted order.  When `errors` is passed in
+    # (e.g. from run()), it is already aligned to ascending eps, so the
+    # x-axis must use the ascending sort, NOT the raw input order.
     if errors is None:
-        errors = convergence_metric(spectra)
-    ax.loglog(eps_values[1:], np.maximum(errors, 1e-16), 'ko-', lw=1.5, markersize=6)
+        eps_sorted, errors = convergence_metric(eps_values, spectra)
+    else:
+        eps_sorted = np.sort(np.asarray(eps_values))
+    ax.loglog(eps_sorted[1:], np.maximum(errors, 1e-16), 'ko-', lw=1.5, markersize=6)
     ax.set_xlabel('q_eps (1/A)')
     ax.set_ylabel('rel. error between adjacent eps')
     ax.set_title('Convergence metric')

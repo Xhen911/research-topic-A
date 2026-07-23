@@ -1,15 +1,14 @@
 """
 Transition basis — electron-hole pair enumeration and band-pair slicing.
 
-This module will eventually hold the band-pair enumeration logic extracted
-from CachedModel (bs_cache construction, eig_at_q).  For now it provides
-a standalone helper so that transition-basis construction is not scattered
-across multiple call sites.
+Provides the canonical band-pair slice helper ``make_bs_cache`` for the
+central ``nb_cache`` bands around charge neutrality.  This is the SINGLE
+source of truth for the ``half - nb_cache//2 : half + nb_cache//2`` slice;
+``CachedModel`` (construction and ``.load``) and ``convergence._chi0_single_q``
+both delegate to it, so the band-slicing convention lives in exactly one place.
 
-During the PR-3 refactor the CachedModel class was moved wholesale to
-core/cache.py without splitting its internals.  The extraction of
-eig_at_q and bs_cache into this module is deferred to a dedicated PR
-to keep PR-3 as a pure move (no logic changes).
+The broader transition-basis enumeration (eig_at_q extraction) remains a
+dedicated-PR item; only the slice helper has been consolidated here so far.
 """
 
 import numpy as np
