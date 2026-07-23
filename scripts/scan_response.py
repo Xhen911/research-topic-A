@@ -64,7 +64,11 @@ def assemble_response(cache, Ef, w_values, eta=ETA, form=True):
 
     Vq_arr = VQ_CONST / cache.q_norms      # (nq,)
     Vq_2d = Vq_arr[np.newaxis, :]          # (1, nq)
-    eps = 1.0 + p0 * Vq_2d
+    # Repo convention: lindhard_from_cache returns the STANDARD retarded
+    # polarisation chi0 with NEGATIVE static value (compressibility -D).
+    # Correct RPA screening is eps = 1 - V*chi0; the wrong 1 + V*chi0 would
+    # give an anti-screened (negative) static dielectric function.
+    eps = 1.0 - p0 * Vq_2d
     loss = -1.0 / eps
 
     return {'p0': p0, 'eps': eps, 'loss': loss}, Vq_arr
