@@ -327,3 +327,55 @@ def lindhard_from_cache(
                     pi0_inter[:, iq] += contrib
 
     return {'intra': pi0_intra, 'inter': pi0_inter}
+
+
+# ============================================================
+#  Dirac-point-centred k-mesh (moved from dos.py, 2026-07-23)
+# ============================================================
+
+def generate_dirac_mesh(
+    model,
+    nk: int = 100,
+    k_cut: float = 0.5,
+    valley: str = 'K',
+) -> np.ndarray:
+    """Generate a uniform k-mesh centred on a Dirac point (Cartesian coords).
+
+    For KP models that are only valid near a single Dirac point.
+    The mesh covers a square of side 2·k_cut centred on the Dirac point.
+
+    Parameters
+    ----------
+    model : HamiltonianModel
+        Must have K_point / Kp_point attributes (KP models).
+    nk : int
+        Points per side (total = nk²).
+    k_cut : float
+        Half-side length (1/Å).
+    valley : str
+        'K' or 'K''.
+
+    Returns
+    -------
+    k_cart : np.ndarray, shape (nk², 2)
+    """
+    if valley == 'K':
+        center = model.K_point
+    else:
+        center = model.Kp_point
+
+    xs = np.linspace(-k_cut, k_cut, nk)
+    ys = np.linspace(-k_cut, k_cut, nk)
+    X, Y = np.meshgrid(xs, ys)
+    k_cart = np.column_stack((X.ravel() + center[0], Y.ravel() + center[1]))
+    return k_cart
+
+
+def _dirac_mesh_area(model, k_cart: np.ndarray) -> float:
+    """Estimate k-space sampling area from a uniform rectangular mesh."""
+    nk = int(np.sqrt(len(k_cart)))
+    xs = np.unique(k_cart[:, 0])
+    dx = xs[1] - xs[0] if len(xs) > 1 else 1.0
+    ys = np.unique(k_cart[:, 1])
+    dy = ys[1] - ys[0] if len(ys) > 1 else 1.0
+    return nk * nk * dx * dy
