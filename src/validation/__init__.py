@@ -1,34 +1,27 @@
-"""
-Validation layer (L5) — self-consistency and physics sanity checks.
+"""L5 Validation — benchmarks, convergence tests, and model checks."""
 
-Modules
--------
-convergence   : q->0 convergence test (moved from response/q_convergence_test.py, PR-5)
-model_checks  : model verification suite (moved from debug/model_checks.py, PR-5)
-sum_rules     : DOS / f-sum rule checks (skeleton — implementation deferred)
-kk            : Kramers-Kronig self-consistency of eps(q,w) (skeleton)
-ward          : Ward identity / charge-conservation checks (skeleton)
-symmetry      : particle-hole and eps(q)=eps(-q) symmetry checks (skeleton)
-
-Skeletons raise NotImplementedError by design: physics implementations
-land in dedicated validation PRs, not in the layer refactor.
-"""
-
-from .convergence import (
-    convergence_metric,
-    default_w_values,
-    recommend_offset,
-    run,
+from .dirac_benchmarks import (
+    dirac_dos_analytical,
+    dirac_jdos_analytical,
+    dirac_optical_jdos_analytical,
 )
-from .model_checks import ModelDebugSuite, verify_kp_models
+from .vhs_analysis import find_vhs_peaks, find_vhs_derivative
+from .graphene_dirac_rpa import (
+    chi0_doped, chi0_undoped, chi0_static_closedform,
+    rpa_dielectric, plasmon_freq, fsum_th, dos_at_EF,
+)
 
 __all__ = [
-    # convergence (moved from response/)
-    "convergence_metric",
-    "default_w_values",
-    "recommend_offset",
-    "run",
-    # model_checks (moved from debug/)
-    "ModelDebugSuite",
-    "verify_kp_models",
+    'dirac_dos_analytical',
+    'dirac_jdos_analytical',
+    'dirac_optical_jdos_analytical',
+    'find_vhs_peaks',
+    'find_vhs_derivative',
+    'chi0_doped',
+    'chi0_undoped',
+    'chi0_static_closedform',
+    'rpa_dielectric',
+    'plasmon_freq',
+    'fsum_th',
+    'dos_at_EF',
 ]
