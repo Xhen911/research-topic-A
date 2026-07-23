@@ -38,6 +38,8 @@ Usage
 """
 
 import numpy as np
+
+from ..propagators.transitions import make_bs_cache
 import os, warnings
 from ..propagators.lindhard import generate_k_mesh
 
@@ -80,8 +82,7 @@ class CachedModel:
 
         self.E_k = np.zeros((self.Nk, model.n_bands))
         self.V_k = np.zeros((self.Nk, model.n_orbitals, self.nb_cache), dtype=complex)
-        self.bs_cache = slice(model.n_bands // 2 - self.nb_cache // 2,
-                              model.n_bands // 2 + self.nb_cache // 2)
+        self.bs_cache = make_bs_cache(model.n_bands, self.nb_cache)
 
         for i in range(self.Nk):
             Ei, Vi = model.solve(self.k_cart[i])
@@ -186,9 +187,7 @@ class CachedModel:
         cache.q_norms = data.get('q_norms')
         cache.Nq = int(data.get('Nq', 0))
         # Reconstruct bs_cache (not serialised in npz)
-        half = cache.E_k.shape[1] // 2
-        cache.bs_cache = slice(half - cache.nb_cache // 2,
-                                half + cache.nb_cache // 2)
+        cache.bs_cache = make_bs_cache(cache.E_k.shape[1], cache.nb_cache)
         return cache
 
     # ── Convenience ───────────────────────────────────────

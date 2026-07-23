@@ -108,8 +108,21 @@ def _triangle_dos_exact(e1, e2, e3, E, area, tol=1e-12):
 
     # --- Fully degenerate: replace with narrow Gaussian ---
     if de_ca < 1e-14:
-        # All three equal → Dirac delta
-        sigma = max(1e-14, area * 0.1)  # negligible but stable
+        # All three equal → Dirac delta.  `sigma` is an ENERGY width (eV),
+        # NOT a k-space area; the old `sigma = area * 0.1` was a dimensional
+        # bug (k-space area used as an energy).  This branch only triggers for
+        # exact triple degeneracy (< 1e-14 eV), so the exact width is immaterial
+        # as long as it is a small energy; 1e-6 eV is a safe stand-in.
+        # All three equal → Dirac delta.  `sigma` must be an ENERGY width
+        # (eV), NOT a k-space area — the old `sigma = area * 0.1` was a
+        # dimensional bug.  Set it to the DOS energy-grid spacing so the
+        # replacement Gaussian is resolved by the grid and its full weight
+        # (= area) is captured by the sum-rule integral; a much smaller
+        # sigma would fall between bins and silently lose weight.
+        dE = float(np.mean(np.diff(E))) if E.size > 1 else 1e-3
+        sigma = max(dE, 1e-14)
+        dos = area * np.exp(-0.5 * ((E - a) / sigma) ** 2) / (sigma * np.sqrt(2 * np.pi))
+        return dos
         dos = area * np.exp(-0.5 * ((E - a) / sigma) ** 2) / (sigma * np.sqrt(2 * np.pi))
         return dos
 

@@ -17,10 +17,12 @@ src/
 │   ├── vertices.py        density_form_factor
 │   └── symmetry.py        fix_gauge (stub)
 ├── propagators/    L2 独立粒子传播子
-│   ├── lindhard.py        χ₀ 极化 (+ generate_k_mesh)
-│   ├── dos.py             DOS / JDOS / A(k,ω)
-│   ├── kubo.py            σ(ω) 光电导
-│   └── transitions.py     make_bs_cache helper
+│   ├── lindhard.py        χ₀ 极化 (+ generate_k_mesh, generate_dirac_mesh)
+│   ├── dos.py             DOS（三角形法，η→0 精确；check_dos_sum_rule）
+│   ├── dos_gaussian.py    DOS（高斯展宽法）
+│   ├── jdos.py            有限-q JDOS（三角形法）
+│   ├── kubo.py            σ(ω) 光电导（velocity_matrix_elements / optical_conductivity*）
+│   └── transitions.py     make_bs_cache 带对切片原语（CachedModel/收敛测试共用）
 ├── interactions/   L3 相互作用
 │   ├── kernel.py          InteractionKernel ABC
 │   ├── rpa.py             coulomb_2d + rpa_response
@@ -32,12 +34,19 @@ src/
 ├── validation/     L5 验证层
 │   ├── convergence.py     q→0 收敛测试
 │   ├── model_checks.py    模型验证套件
-│   └── sum_rules/kk/ward/symmetry.py   骨架
+│   ├── dirac_benchmarks.py Dirac RPA 基准（解析）
+│   ├── vhs_analysis.py    范霍夫奇点分析
+│   ├── graphene_dirac_rpa.py  SLG Dirac RPA 验证套件
+│   ├── graphene_tb_hybrid.py  TB-hybrid 嵌套网格验证（生产扫描见 scripts/tb_hybrid_verify.py）
+│   └── sum_rules.py        谱权重求和规则（骨架；DOS 求和规则已由 dos.check_dos_sum_rule 实现）
 ├── core/
-│   ├── cache.py           CachedModel (k/q 缓存)
-│   └── grids.py           make_k_path
+│   ├── cache.py           CachedModel (k/q 缓存；bs_cache 委托 transitive.make_bs_cache)
+│   └── quadrature.py      integrate_bz BZ 积分
 └── vis/            fermi_surface 可视化工具
 ```
 
 依赖方向严格向下：bands ← propagators ← interactions ← observables，validation 横切，core 被各层共用。
-回归基线：`TBG_PROD_DATA_DIR=<生产数据目录> python -m pytest tests/ -v`（9 项，全绿才能合并）。
+回归基线：`python -m pytest tests/ -v`（见 tests/：回归基线 + Dirac RPA + TB-hybrid 快速测试
++ scan_response ε 符号 + convergence 绘图等；全绿才能合并）。
+注意：scripts/ 下是生产级脚本（如 `python scripts/tb_hybrid_verify.py` 跑完整 TB-hybrid 验证），
+不属 pytest 收集范围。

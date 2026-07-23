@@ -10,9 +10,11 @@ not part of the L5 layer refactor):
 
    with A_BZ = |det(R)| the moiré BZ area.  This is EXACT for the
    η→0 Lehmann–Taut triangle formula (no broadening).  The regression
-   baseline (tests/test_regression_baseline.py) already enforces
-   rel. err. < 1e-3; this module will collect that assertion here
-   together with JDOS and A(k,ω) variants.
+   baseline (tests/test_regression_baseline.py::test_dos_sum_rule) and
+   the implemented ``check_dos_sum_rule`` in ``propagators/dos.py`` already
+   enforce rel. err. < 1e-3 — the assertion is REAL, not deferred.  This
+   module is a planned higher-level collector for DOS + JDOS + A(k,ω)
+   variants.
 
 2. f-sum rule for the optical conductivity (propagators/kubo.py):
 
