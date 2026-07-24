@@ -15,19 +15,27 @@ axis — the natural "single spectrum line" companion to the DOS.  (Finite-q
 JDOS(q,ω), which maps to finite-momentum loss / plasmon scattering, is not
 included: it has no clean 1D reading and needs a heatmap, not a line.)
 
-ALL raw axis data — the DOS curves and the JDOS(q=0) spectra — are written to
-a single ``.npz`` file *before* any plotting, so the numerical results are
+The DOS line duplicates what scripts/lifshitz_scan.py already produces, so
+pass ``--no-dos`` to compute **only JDOS(q=0)** (a pure JDOS probe).  The
+saved ``.npz`` then holds just the JDOS transition-energy axes.
+
+ALL raw axis data — the DOS curves and/or the JDOS(q=0) spectra — are written
+to a single ``.npz`` file *before* any plotting, so the numerical results are
 preserved for later re-visualisation or downstream analysis.  A summary plot
-(DOS vs E and JDOS(q=0) vs ω across angles, with VHS/Lifshitz markers) is
-produced afterwards.
+(DOS vs E and JDOS(q=0) vs ω across angles, with VHS/Lifshitz markers, or just
+the JDOS line in ``--no-dos`` mode) is produced afterwards.
 
 It extends scripts/lifshitz_scan.py (DOS / VHS batch scan) with the
 triangle-method JDOS transition-energy spectrum from src.propagators.jdos.
 
 Usage
 -----
-    # full Lifshitz/vHS angle scan
+    # full Lifshitz/vHS angle scan (DOS + JDOS)
     python scripts/tbg_jdos_angle_scan.py --theta 0.80 0.99 1.05 1.08 1.16 1.47 \
+        --nk 24 --nw 400 --save-cache --plot
+
+    # pure JDOS(q=0) probe (no DOS; lifshitz_scan already covers DOS)
+    python scripts/tbg_jdos_angle_scan.py --theta 0.80 0.99 1.05 --no-dos \
         --nk 24 --nw 400 --save-cache --plot
 
     # quick test
@@ -86,12 +94,16 @@ def _build_or_load(model, theta, nk, n_shells, cache_dir, save_cache):
 
 
 def analyze_theta(theta, nk=24, n_shells=2, nw=400,
-                  nE=3000, cache_dir='.', save_cache=False):
-    """Full DOS + JDOS(q=0) analysis for one twist angle.
+                  nE=3000, cache_dir='.', save_cache=False, do_dos=True):
+    """JDOS(q=0) analysis for one twist angle, optionally with the DOS curve.
 
-    Returns dict with DOS curve, JDOS(q=0) spectrum, CNP, and detected
-    VHS/Lifshitz markers.  Both DOS and JDOS(q=0) are 1D spectra (directly
-    comparable), so the program keeps only these two lines.
+    With ``do_dos=True`` (default) it also returns the DOS curve and the
+    VHS/Lifshitz markers derived from DOS peaks.  With ``do_dos=False`` it
+    computes only JDOS(q=0) — a pure JDOS probe (DOS is already covered by
+    scripts/lifshitz_scan.py).
+
+    Returns dict with JDOS(q=0) spectrum, CNP, and (if do_dos) DOS curve +
+    VHS/Lifshitz markers.  All returned spectra are 1D.
     """
     model = BistritzMacDonaldTBG(theta=theta, n_shells=n_shells)
     cache, E_k, flat_slice = _build_or_load(
@@ -100,22 +112,24 @@ def analyze_theta(theta, nk=24, n_shells=2, nw=400,
 
     E_cnp = compute_cnp(E_k, flat_slice)
 
-    # ── DOS (single-particle state-density curve) ──
-    E, dos = compute_dos_triangle(model, nk=nk, nE=nE, band_slice=flat_slice)
-    ok, integ, expected = check_dos_sum_rule(
-        E, dos, g=model.degeneracy_factor(), nb=nb_flat,
-        area_BZ=abs(np.linalg.det(model.reciprocal_vectors)))
-    if not ok:
-        print(f'  ⚠ DOS sum rule: ∫={integ:.3f} vs g·nb·A/(2π)²={expected:.1f}')
-
-    # ── VHS / Lifshitz markers from DOS peaks ──
-    pk = find_local_maxima(E, dos)
+    E = dos = None
     vhs_list = []
-    for i in pk:
-        ev = float(E[i])
-        nu = float(compute_filling(E_k, ev, flat_slice))
-        vhs_list.append({'E_vhs': ev, 'E_rel': float(ev - E_cnp), 'nu': nu,
-                         'side': 'electron' if ev > E_cnp else 'hole'})
+    if do_dos:
+        # ── DOS (single-particle state-density curve) ──
+        E, dos = compute_dos_triangle(model, nk=nk, nE=nE, band_slice=flat_slice)
+        ok, integ, expected = check_dos_sum_rule(
+            E, dos, g=model.degeneracy_factor(), nb=nb_flat,
+            area_BZ=abs(np.linalg.det(model.reciprocal_vectors)))
+        if not ok:
+            print(f'  ⚠ DOS sum rule: ∫={integ:.3f} vs g·nb·A/(2π)²={expected:.1f}')
+
+        # ── VHS / Lifshitz markers from DOS peaks ──
+        pk = find_local_maxima(E, dos)
+        for i in pk:
+            ev = float(E[i])
+            nu = float(compute_filling(E_k, ev, flat_slice))
+            vhs_list.append({'E_vhs': ev, 'E_rel': float(ev - E_cnp), 'nu': nu,
+                             'side': 'electron' if ev > E_cnp else 'hole'})
 
     # ── transition-energy axis from the flat-band manifold ──
     eflat = E_k[:, flat_slice]
@@ -129,7 +143,7 @@ def analyze_theta(theta, nk=24, n_shells=2, nw=400,
     print(f'  JDOS(q=0) ∫dω = {float(_trapz(jdos_q0, w_q0)):.4f}')
 
     return dict(theta=theta, E_cnp=E_cnp, E=E, dos=dos, vhs=vhs_list,
-                w=w_q0, jdos_q0=jdos_q0, nb_flat=nb_flat)
+                w=w_q0, jdos_q0=jdos_q0, nb_flat=nb_flat, do_dos=do_dos)
 
 
 def _plot_summary(results, outdir):
@@ -144,30 +158,37 @@ def _plot_summary(results, outdir):
     nA = len(results)
     cmap = plt.get_cmap('viridis')
     colors = [cmap(i / max(nA - 1, 1)) for i in range(nA)]
+    has_dos = results[0].get('dos') is not None
 
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+    if has_dos:
+        fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+    else:
+        fig, axes = plt.subplots(1, 1, figsize=(7, 5))
+        axes = [axes]
 
-    # (1) DOS vs E
-    ax = axes[0]
-    for r, c in zip(results, colors):
-        ax.plot(r['E'] * 1e3, r['dos'], color=c, lw=1.0,
-                label=rf'$\theta={r["theta"]:.2f}^\circ$')
-        ax.axvline(r['E_cnp'] * 1e3, color=c, ls=':', lw=0.6, alpha=0.6)
-        for v in r['vhs']:
-            ax.axvline(v['E_vhs'] * 1e3, color=c, ls='--', lw=0.5, alpha=0.5)
-    ax.set_xlabel('E (meV)')
-    ax.set_ylabel('DOS (states / eV / uc)')
-    ax.set_title('TBG DOS vs twist angle')
-    ax.legend(fontsize=7)
+    # (1) DOS vs E  (only when DOS was computed)
+    if has_dos:
+        ax = axes[0]
+        for r, c in zip(results, colors):
+            ax.plot(r['E'] * 1e3, r['dos'], color=c, lw=1.0,
+                    label=rf'$\theta={r["theta"]:.2f}^\circ$')
+            ax.axvline(r['E_cnp'] * 1e3, color=c, ls=':', lw=0.6, alpha=0.6)
+            for v in r['vhs']:
+                ax.axvline(v['E_vhs'] * 1e3, color=c, ls='--', lw=0.5, alpha=0.5)
+        ax.set_xlabel('E (meV)')
+        ax.set_ylabel('DOS (states / eV / uc)')
+        ax.set_title('TBG DOS vs twist angle')
+        ax.legend(fontsize=7)
 
-    # (2) JDOS(q=0) vs transition energy ω  (optical joint DOS — a 1D line)
-    ax = axes[1]
+    # JDOS(q=0) vs transition energy ω  (optical joint DOS — a 1D line)
+    ax = axes[-1]
     for r, c in zip(results, colors):
         ax.plot(r['w'] * 1e3, r['jdos_q0'], color=c, lw=1.0,
                 label=rf'$\theta={r["theta"]:.2f}^\circ$')
     ax.set_xlabel(r'$\omega$ transition energy (meV)')
     ax.set_ylabel('JDOS(q=0) (states / eV / uc)')
-    ax.set_title(r'JDOS at q=0 (optical joint DOS) vs twist angle')
+    ax.set_title(r'JDOS at q=0 (optical joint DOS) vs twist angle'
+                 + ('  [--no-dos]' if not has_dos else ''))
     ax.legend(fontsize=7)
 
     fig.tight_layout()
@@ -194,13 +215,16 @@ def main():
     parser.add_argument('--out', default='jdos-angle-scan.npz')
     parser.add_argument('--plot', action='store_true', default=True)
     parser.add_argument('--no-plot', dest='plot', action='store_false')
+    parser.add_argument('--no-dos', dest='do_dos', action='store_false',
+                        help='Skip the DOS curve (scripts/lifshitz_scan.py already '
+                             'covers DOS). Compute only JDOS(q=0) — a pure JDOS probe.')
     args = parser.parse_args()
 
     print('=' * 64)
     print('  TBG DOS + JDOS(q=0) angle scan (Lifshitz / vHS probe)')
     print('=' * 64)
     print(f'  theta: {args.theta}')
-    print(f'  nk={args.nk}, nw={args.nw}, nE={args.nE}')
+    print(f'  nk={args.nk}, nw={args.nw}, nE={args.nE}, dos={args.do_dos}')
 
     results = []
     for theta in args.theta:
@@ -208,36 +232,41 @@ def main():
         t0 = time.time()
         r = analyze_theta(theta, nk=args.nk, n_shells=args.n_shells,
                           nw=args.nw, nE=args.nE,
-                          cache_dir=args.cache_dir, save_cache=args.save_cache)
+                          cache_dir=args.cache_dir, save_cache=args.save_cache,
+                          do_dos=args.do_dos)
         print(f'  CNP: {r["E_cnp"]*1e3:.3f} meV')
-        for v in r['vhs']:
-            print(f'  VHS [{v["side"]:7s}]: E={v["E_vhs"]*1e3:+8.3f} meV  '
-                  f'nu={v["nu"]:+.4f}')
+        if args.do_dos:
+            for v in r['vhs']:
+                print(f'  VHS [{v["side"]:7s}]: E={v["E_vhs"]*1e3:+8.3f} meV  '
+                      f'nu={v["nu"]:+.4f}')
         print(f'  time: {time.time()-t0:.1f}s')
         results.append(r)
 
     # ── PRESERVE AXIS DATA BEFORE any visualization (requirement) ──
-    E_all = np.stack([r['E'] for r in results])          # (nA, nE)
-    dos_all = np.stack([r['dos'] for r in results])      # (nA, nE)
     w_all = np.stack([r['w'] for r in results])          # (nA, nw)
     jdos_q0_all = np.stack([r['jdos_q0'] for r in results])   # (nA, nw)
     E_cnp_arr = np.array([r['E_cnp'] for r in results])
-    maxv = max(len(r['vhs']) for r in results)
-    vhs_E = np.full((len(results), maxv), np.nan)
-    vhs_nu = np.full((len(results), maxv), np.nan)
-    for a, r in enumerate(results):
-        for b, v in enumerate(r['vhs']):
-            vhs_E[a, b] = v['E_vhs']
-            vhs_nu[a, b] = v['nu']
+    save_kwargs = dict(
+        thetas=np.array([r['theta'] for r in results]),
+        nk=args.nk, n_shells=args.n_shells, nw=args.nw, do_dos=args.do_dos,
+        E_cnp=E_cnp_arr, w=w_all, jdos_q0=jdos_q0_all)
 
-    np.savez(args.out,
-             thetas=np.array([r['theta'] for r in results]),
-             nk=args.nk, n_shells=args.n_shells, nw=args.nw,
-             E=E_all, dos=dos_all, E_cnp=E_cnp_arr,
-             vhs_E=vhs_E, vhs_nu=vhs_nu,
-             w=w_all, jdos_q0=jdos_q0_all)
+    if args.do_dos:
+        E_all = np.stack([r['E'] for r in results])      # (nA, nE)
+        dos_all = np.stack([r['dos'] for r in results])  # (nA, nE)
+        maxv = max(len(r['vhs']) for r in results)
+        vhs_E = np.full((len(results), maxv), np.nan)
+        vhs_nu = np.full((len(results), maxv), np.nan)
+        for a, r in enumerate(results):
+            for b, v in enumerate(r['vhs']):
+                vhs_E[a, b] = v['E_vhs']
+                vhs_nu[a, b] = v['nu']
+        save_kwargs.update(E=E_all, dos=dos_all, vhs_E=vhs_E, vhs_nu=vhs_nu)
+
+    np.savez(args.out, **save_kwargs)
     print(f'\n[save] axis data -> {args.out}')
-    print(f'       DOS curves : E({E_all.shape[1]}) × {E_all.shape[0]} angles')
+    if args.do_dos:
+        print(f'       DOS curves : E({E_all.shape[1]}) × {E_all.shape[0]} angles')
     print(f'       JDOS(q=0)  : ω({w_all.shape[1]}) × {w_all.shape[0]} angles')
 
     if args.plot:
