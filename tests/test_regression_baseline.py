@@ -33,6 +33,7 @@ from src.propagators.dos import (
     compute_dos_triangle,
     compute_eigenvalues,
 )
+from src.propagators.triangle_core import triangle_spectrum, _triangles_for_kmesh
 from src.bands.occupations import compute_cnp, compute_filling
 from src.propagators.lindhard import generate_k_mesh, lindhard_polarization
 
@@ -40,6 +41,9 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
 
 
 # ── 1. BM 模型本征值/速度算符快照 ─────────────────────────
+@pytest.mark.skipif(
+    not os.path.exists(os.path.join(DATA_DIR, 'bm_eig_snapshot.npz')),
+    reason="bm_eig_snapshot.npz fixture not present in this checkout")
 def test_bm_eigenvalue_snapshot():
     snap = np.load(os.path.join(DATA_DIR, 'bm_eig_snapshot.npz'))
     model = BistritzMacDonaldTBG(theta=float(snap['theta']),
@@ -71,6 +75,30 @@ def test_dos_sum_rule_graphene_triangle():
     ok, integral, expected = check_dos_sum_rule(
         E, dos, g=g.degeneracy_factor(), nb=g.n_bands, area_BZ=area_bz)
     assert ok, f'DOS sum rule: integral={integral:.4f} vs expected={expected:.4f}'
+
+
+# ── 3b. DOS delegation: compute_dos_triangle == hand-rolled primitive ──
+def test_dos_triangle_delegates_to_primitive():
+    """compute_dos_triangle must be a thin wrapper over triangle_spectrum —
+    no numerical drift introduced by the delegation refactor."""
+    g = SingleLayerGrapheneTB(t=2.78)
+    nk = 24
+    nE = 2000
+
+    E, dos = compute_dos_triangle(g, nk=nk, nE=nE)
+
+    # Replicate the internals of compute_dos_triangle directly.
+    _, k_cart = generate_k_mesh(nk, g.reciprocal_vectors)
+    E_k, _ = compute_eigenvalues(g, k_cart)
+    area_BZ = abs(np.linalg.det(g.reciprocal_vectors))
+    prefactor = g.degeneracy_factor() / ((2 * np.pi) ** 2)
+    tri_idx = _triangles_for_kmesh(nk)
+    spectrum = triangle_spectrum(
+        vertex_fields=E_k, E_grid=E, weights=None, triangles=tri_idx,
+        area_BZ=area_BZ, prefactor=prefactor, enforce_sum_rule=True)
+    dos_ref = spectrum.sum(axis=1)
+
+    np.testing.assert_allclose(dos, dos_ref, rtol=1e-10, atol=1e-12)
 
 
 # ── 4. CNP 处填充因子为零（BM, 中间两条平带）──────────────
