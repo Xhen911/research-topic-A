@@ -28,6 +28,10 @@ import numpy as np
 from typing import Callable, Optional, Tuple
 
 from .lindhard import generate_k_mesh, fermi_dirac
+from .triangle_core import (
+    _triangles_for_kmesh,
+    triangle_spectrum,
+)
 
 
 
@@ -60,20 +64,8 @@ def compute_eigenvalues(model, k_cart: np.ndarray) -> Tuple[np.ndarray, np.ndarr
 
 #  Triangle-method DOS (exact eta->0, Lehmann-Taut)
 # ============================================================
-
-def _triangles_for_kmesh(nk):
-    """Triangle connectivity for a uniform nk×nk BZ parallelogram mesh."""
-    tri_list = []
-    for a in range(nk):
-        for b in range(nk):
-            v00 = a * nk + b
-            v01 = a * nk + (b + 1) % nk
-            v10 = (a + 1) % nk * nk + b
-            v11 = (a + 1) % nk * nk + (b + 1) % nk
-            tri_list.append([v00, v01, v11])
-            tri_list.append([v00, v10, v11])
-    return np.array(tri_list, dtype=int)
-
+#  NOTE: _triangles_for_kmesh now lives in triangle_core.py and is
+#  re-exported here.  The batched integration is done by triangle_spectrum.
 
 def _triangle_dos_exact(e1, e2, e3, E, area, tol=1e-12):
     """Exact η→0 DOS contribution from one triangle with linear dispersion.
@@ -242,14 +234,20 @@ def compute_dos_triangle(model, nk=24, E_range=None, nE=3000,
     prefactor = g / ((2 * np.pi) ** 2)
 
     tri_idx = _triangles_for_kmesh(nk_side)
-    dos = np.zeros(nE)
 
-    for i1, i2, i3 in tri_idx:
-        for ib in range(nb_sel):
-            e1 = float(E_k[i1, ib])
-            e2 = float(E_k[i2, ib])
-            e3 = float(E_k[i3, ib])
-            dos += prefactor * _triangle_dos_exact(e1, e2, e3, E, area_tri)
+    # Delegated to the vectorised primitive (triangle_core.triangle_spectrum):
+    # one batched Lehmann-Taut accumulation per band instead of the old
+    # (triangle × band) Python-loop calling _triangle_dos_exact.
+    spectrum = triangle_spectrum(
+        vertex_fields=E_k,           # (Nk, nb_sel)
+        E_grid=E,
+        weights=None,
+        triangles=tri_idx,
+        area_BZ=area_BZ,
+        prefactor=prefactor,
+        enforce_sum_rule=True,
+    )
+    dos = spectrum.sum(axis=1)
 
     return E, dos
 

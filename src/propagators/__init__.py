@@ -13,6 +13,7 @@ from .dos import (
     check_dos_sum_rule,
     compute_dos_triangle,
 )
+from .triangle_core import triangle_spectrum
 from .dos_gaussian import (
     compute_dos,
     compute_dos_vectorized,
@@ -20,7 +21,11 @@ from .dos_gaussian import (
     compute_jdos,
     compute_optical_jdos,
 )
-from .jdos import compute_jdos_q_triangle
+from .jdos import (
+    compute_jdos_q_triangle,
+    compute_jdos_q0_triangle,
+    check_jdos_sum_rule,
+)
 from ..core.quadrature import integrate_bz
 from ..validation.dirac_benchmarks import (
     dirac_dos_analytical,
@@ -58,7 +63,10 @@ __all__ = [
     'dirac_optical_jdos_analytical',
     'check_dos_sum_rule',
     'compute_dos_triangle',
+    'triangle_spectrum',
     'compute_jdos_q_triangle',
+    'compute_jdos_q0_triangle',
+    'check_jdos_sum_rule',
     'find_vhs_peaks',
     'find_vhs_derivative',
     # kubo
